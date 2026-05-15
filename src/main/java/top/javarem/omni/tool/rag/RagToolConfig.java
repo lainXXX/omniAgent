@@ -227,11 +227,18 @@ public class RagToolConfig implements AgentTool {
 
             // 构建 In 查询 SQL，使用动态占位符
             StringBuilder placeholders = new StringBuilder();
+            Long[] fileIdLongs = new Long[fileIds.length];
             Object[] params = new Object[fileIds.length + 1];
             params[0] = safeKbId;
             for (int i = 0; i < fileIds.length; i++) {
+                try {
+                    fileIdLongs[i] = Long.parseLong(fileIds[i]);
+                } catch (NumberFormatException e) {
+                    log.error("无效的 fileId: {}", fileIds[i]);
+                    return "{\"error\": \"无效的文件ID: " + fileIds[i] + "\"}";
+                }
                 placeholders.append(i == 0 ? "?" : ", ?");
-                params[i + 1] = fileIds[i];
+                params[i + 1] = fileIdLongs[i];
             }
 
             String selectSql = """
@@ -291,13 +298,13 @@ public class RagToolConfig implements AgentTool {
 
             // 3. 分页查询 (使用 SQL 别名直接定义表头)
             String selectSql = """
-            SELECT id AS '文件ID', 
-                   filename AS '文件名', 
-                   total_chunks AS '分块数',
-                   status AS '状态'
-            FROM kb_file 
-            WHERE kb_id = ? 
-            ORDER BY created_at DESC 
+            SELECT id AS file_id,
+                   filename AS file_name,
+                   total_chunks AS chunk_count,
+                   status AS file_status
+            FROM kb_file
+            WHERE kb_id = ?
+            ORDER BY created_at DESC
             LIMIT ? OFFSET ?
             """;
 
