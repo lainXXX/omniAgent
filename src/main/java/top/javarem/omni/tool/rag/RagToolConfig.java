@@ -18,6 +18,8 @@ import top.javarem.omni.service.rag.AdvancedRagEtlService;
 import top.javarem.omni.tool.AgentTool;
 import top.javarem.omni.utils.MarkdownUtil;
 
+import java.util.Arrays;
+
 import java.util.*;
 
 /**
@@ -144,36 +146,17 @@ public class RagToolConfig implements AgentTool {
         }
 
         try {
-            // 2. 构造 SQL：PostgreSQL 元组查询
-            // kb_id 存储在 metadata JSONB 字段中
-            // 单个 chunk 用 =，多个 chunks 用 IN
-            String whereClause;
+            // 2. 构造 SQL 参数
             List<Object> args = new ArrayList<>();
             args.add(kbId);
-
-            if (chunks.size() == 1) {
-                // 单个 chunk：使用 =
-                whereClause = "(file_id = ? AND chunk_index = ?)";
-                args.add(Long.parseLong(chunks.get(0).fileId()));
-                args.add(chunks.get(0).chunkIndex());
-            } else {
-                // 多个 chunks：使用 IN ((?,?), (?,?)...)
-                StringJoiner placeholders = new StringJoiner(", ");
-                for (ChunkReference chunk : chunks) {
-                    placeholders.add("(?, ?)");
-                    args.add(Long.parseLong(chunk.fileId()));
-                    args.add(chunk.chunkIndex());
-                }
-                whereClause = "(file_id, chunk_index) IN (" + placeholders + ")";
-            }
+            long[] fileIds = chunks.stream().mapToLong(c -> Long.parseLong(c.fileId())).toArray();
+            args.add(Arrays.toString(fileIds).replace("[", "{").replace("]", "}"));
 
             String sql = """
-                SELECT file_id AS "文件ID",
-                       chunk_index AS "序号",
-                       content AS "文本内容"
+                SELECT id, file_id, content, chunk_index
                 FROM rag_parent_chunks
-                WHERE metadata->>'kbId' = ?
-                AND """ + whereClause + """
+                WHERE (metadata::jsonb)->>'kbId' = ?
+                AND file_id = ANY(?::int8[])
                 ORDER BY file_id, chunk_index ASC
                 """;
 
