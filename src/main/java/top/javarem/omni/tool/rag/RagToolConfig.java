@@ -149,14 +149,19 @@ public class RagToolConfig implements AgentTool {
             // 2. 构造 SQL 参数
             List<Object> args = new ArrayList<>();
             args.add(kbId);
-            long[] fileIds = chunks.stream().mapToLong(c -> Long.parseLong(c.fileId())).toArray();
-            args.add(Arrays.toString(fileIds).replace("[", "{").replace("]", "}"));
+            StringJoiner placeholders = new StringJoiner(", ");
+            for (ChunkReference chunk : chunks) {
+                placeholders.add("(?, ?)");
+                args.add(Long.parseLong(chunk.fileId()));
+                args.add(chunk.chunkIndex());
+            }
 
             String sql = """
                 SELECT id, file_id, content, chunk_index
                 FROM rag_parent_chunks
                 WHERE (metadata::jsonb)->>'kbId' = ?
-                AND file_id = ANY(?::int8[])
+                AND (file_id, chunk_index) IN (""" + placeholders + """
+                )
                 ORDER BY file_id, chunk_index ASC
                 """;
 
