@@ -7,9 +7,12 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.memory.repository.jdbc.JdbcChatMemoryRepository;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.minimax.MiniMaxChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
+import org.springframework.ai.openai.OpenAiEmbeddingOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -46,13 +49,27 @@ public class AiConfig {
         return anthropicChatModel;
     }
 
+    @Bean("openAiEmbeddingModel")
+    public OpenAiEmbeddingModel openAiEmbeddingModel() {
+        OpenAiApi openAiApi = OpenAiApi.builder()
+                .baseUrl("https://api.siliconflow.cn/")
+                .apiKey("sk-ibkhhlbmycyrbenrlcngrzixadrtqzdhmdsywrejswgdmucc")
+                .build();
+        OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
+                .model("BAAI/bge-m3")
+                .dimensions(1024)
+                .build();
+
+        return new OpenAiEmbeddingModel(openAiApi, MetadataMode.EMBED, options);
+    }
+
     @Bean
     public ChatClient anthropicChatClient(AnthropicChatModel anthropicChatModel,
                                           MessageFormatAdvisor messageFormatAdvisor,
                                           LifecycleToolCallAdvisor lifecycleToolCallAdvisor,
                                           TaskProgressAdvisor taskProgressAdvisor,
-                                          RetryAdvisor retryAdvisor
-                                          ) {
+                                          RetryAdvisor retryAdvisor,
+                                          OpenAiEmbeddingModel openAiEmbeddingModel) {
         return ChatClient.builder(anthropicChatModel)
                 .defaultToolContext(new HashMap<>(Map.of("debug", true)))
                 .defaultAdvisors(

@@ -54,7 +54,7 @@ public class KnowledgeBaseController {
      */
     @GetMapping("/files")
     public ResponseEntity<List<FileRecord>> listFiles(
-            @RequestParam(required = false) Long kbId) {
+            @RequestParam(required = false) String kbId) {
         try {
             List<FileRecord> files;
             if (kbId != null) {
@@ -92,14 +92,14 @@ public class KnowledgeBaseController {
     @PostMapping("/files/upload")
     public ResponseEntity<?> uploadFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "kbId", required = false) Long kbId) {
+            @RequestParam(value = "kbId", required = false) String kbId) {
         try {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "上传的文件不能为空"));
             }
 
             log.info("上传文件: {}, kbId: {}", file.getOriginalFilename(), kbId);
-            EtlProcessReport report = advancedRagEtlService.processFile(file, kbId != null ? String.valueOf(kbId) : null);
+            EtlProcessReport report = advancedRagEtlService.processFile(file, kbId);
 
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
@@ -145,7 +145,7 @@ public class KnowledgeBaseController {
     @PostMapping("/files/{fileId}/retry")
     public ResponseEntity<?> retryFile(
             @PathVariable Long fileId,
-            @RequestParam(value = "kbId", required = false) Long kbId) {
+            @RequestParam(value = "kbId", required = false) String kbId) {
         try {
             FileRecord file = ragFileRepository.findById(fileId);
             if (file == null) {
@@ -175,9 +175,9 @@ public class KnowledgeBaseController {
     public ResponseEntity<?> search(
             @RequestParam String query,
             @RequestParam(defaultValue = "5") int topK,
-            @RequestParam(required = false) Long kbId) {
+            @RequestParam(required = false) String kbId) {
         try {
-            var documents = advancedRagEtlService.retrieveContext(query, topK, kbId != null ? String.valueOf(kbId) : null);
+            var documents = advancedRagEtlService.retrieveContext(query, topK, kbId);
             String results = documents.stream()
                     .map(doc -> doc.getText())
                     .reduce((a, b) -> a + "\n\n---\n\n" + b)

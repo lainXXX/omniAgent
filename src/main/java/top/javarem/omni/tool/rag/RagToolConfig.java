@@ -44,7 +44,6 @@ public class RagToolConfig implements AgentTool {
     }
 
     private final VectorStore vectorStore;
-    private final JdbcTemplate mysqlJdbcTemplate;
     private final JdbcTemplate pgVectorJdbcTemplate;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -53,12 +52,10 @@ public class RagToolConfig implements AgentTool {
     @Autowired
     public RagToolConfig(
             VectorStore vectorStore,
-            JdbcTemplate mysqlJdbcTemplate,
             @Qualifier("pgVectorJdbcTemplate") JdbcTemplate pgVectorJdbcTemplate,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             ObjectMapper objectMapper, AdvancedRagEtlService advancedRagEtlService) {
         this.vectorStore = vectorStore;
-        this.mysqlJdbcTemplate = mysqlJdbcTemplate;
         this.pgVectorJdbcTemplate = pgVectorJdbcTemplate;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.objectMapper = objectMapper;
@@ -241,12 +238,12 @@ public class RagToolConfig implements AgentTool {
             SELECT filename, status, total_chunks, created_at
             FROM kb_file
             WHERE kb_id = ? AND status = 'done'
-            AND file_id IN (""" + placeholders + """
+            AND id IN (""" + placeholders + """
             )
             ORDER BY created_at DESC
             """;
 
-            List<Map<String, Object>> files = mysqlJdbcTemplate.queryForList(selectSql, params);
+            List<Map<String, Object>> files = pgVectorJdbcTemplate.queryForList(selectSql, params);
 
             // 4. 构建并返回结果
             return MarkdownUtil.renderTable(files);
@@ -286,7 +283,7 @@ public class RagToolConfig implements AgentTool {
         try {
             // 2. 统计总数 (分页必备，告诉 LLM 后面还有没有)
             String countSql = "SELECT COUNT(*) FROM kb_file WHERE kb_id = ?";
-            Integer total = mysqlJdbcTemplate.queryForObject(countSql, Integer.class, safeKbId);
+            Integer total = pgVectorJdbcTemplate.queryForObject(countSql, Integer.class, safeKbId);
 
             if (total == null || total == 0) {
                 return "📁 知识库 [" + safeKbId + "] 目前是空的，没有任何文件。";
@@ -304,7 +301,7 @@ public class RagToolConfig implements AgentTool {
             LIMIT ? OFFSET ?
             """;
 
-            List<Map<String, Object>> files = mysqlJdbcTemplate.queryForList(selectSql, safeKbId, size, offset);
+            List<Map<String, Object>> files = pgVectorJdbcTemplate.queryForList(selectSql, safeKbId, size, offset);
 
             // 4. 使用自动表格工具生成内容
             String tableMd = MarkdownUtil.renderTable(files);

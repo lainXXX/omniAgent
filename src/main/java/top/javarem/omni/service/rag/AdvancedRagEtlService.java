@@ -421,14 +421,8 @@ public class AdvancedRagEtlService {
      * 返回 fileId 供后续使用
      */
     public Long initFileRecord(String kbId, String filename) {
-        Long kbIdLong;
-        try {
-            kbIdLong = Long.parseLong(kbId);
-        } catch (NumberFormatException e) {
-            // 如果不是数字，使用默认值 0
-            kbIdLong = 0L;
-        }
-        Long fileId = ragFileRepository.insert(kbIdLong, filename);
+        if (kbId == null || kbId.isEmpty()) kbId = "default";
+        Long fileId = ragFileRepository.insert(kbId, filename);
         log.info("初始化文件记录: fileId={}, kbId={}, filename={}", fileId, kbId, filename);
         return fileId;
     }
@@ -465,14 +459,7 @@ public class AdvancedRagEtlService {
     }
 
     public List<Document> getParentChunksByKbId(String kbId) {
-        // 将 kbId 转换为 Long 类型，确保与数据库类型一致
-        Long kbIdLong;
-        try {
-            kbIdLong = Long.parseLong(kbId);
-        } catch (NumberFormatException e) {
-            // 如果不是数字，使用默认值 0
-            kbIdLong = 0L;
-        }
+        final String safeKbId = (kbId == null || kbId.isEmpty()) ? "default" : kbId;
 
         // 建议：如果表名在 schema 内部，请使用 "rag"."rag_parent_chunks"
         String sql = """
@@ -499,10 +486,10 @@ public class AdvancedRagEtlService {
             // 覆盖或合并元数据
             metadata.put("chunkIndex", chunkIndex);
             metadata.put("token_count", tokenCount);
-            metadata.put("kb_id", kbId);
+            metadata.put("kb_id", safeKbId);
 
             return new Document(id, content, metadata);
-        }, kbIdLong);
+        }, safeKbId);
     }
 
     /**
@@ -667,7 +654,7 @@ public class AdvancedRagEtlService {
     public void deleteChildChunksByFileId(Long fileId) {
         try {
             // 从向量库表直接查询关联的子块ID
-            String sql = "SELECT id FROM vector_store WHERE metadata_->>'file_id' = ?";
+            String sql = "SELECT id FROM vector_store WHERE (metadata::jsonb)->>'file_id' = ?";
             List<String> ids = pgVectorJdbcTemplate.queryForList(sql, String.class, String.valueOf(fileId));
 
             if (!ids.isEmpty()) {

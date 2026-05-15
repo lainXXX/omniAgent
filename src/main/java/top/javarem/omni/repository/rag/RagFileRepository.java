@@ -26,7 +26,7 @@ public class RagFileRepository {
     /**
      * 插入文件记录，返回自增 ID
      */
-    public Long insert(Long kbId, String filename) {
+    public Long insert(String kbId, String filename) {
         String sql = "INSERT INTO kb_file (kb_id, filename, status, total_chunks) VALUES (?, ?, 'uploading', 0) RETURNING id";
         return jdbcTemplate.queryForObject(sql, Long.class, kbId, filename);
     }
@@ -56,7 +56,7 @@ public class RagFileRepository {
         List<FileRecord> results = jdbcTemplate.query(sql, (rs, rowNum) -> {
             FileRecord record = new FileRecord();
             record.setId(rs.getLong("id"));
-            record.setKbId(rs.getObject("kb_id") != null ? rs.getLong("kb_id") : null);
+            record.setKbId(rs.getObject("kb_id") != null ? rs.getString("kb_id") : null);
             record.setFilename(rs.getString("filename"));
             record.setStatus(rs.getString("status"));
             record.setTotalChunks(rs.getInt("total_chunks"));
@@ -75,7 +75,7 @@ public class RagFileRepository {
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
             FileRecord record = new FileRecord();
             record.setId(rs.getLong("id"));
-            record.setKbId(rs.getObject("kb_id") != null ? rs.getLong("kb_id") : null);
+            record.setKbId(rs.getObject("kb_id") != null ? rs.getString("kb_id") : null);
             record.setFilename(rs.getString("filename"));
             record.setStatus(rs.getString("status"));
             record.setTotalChunks(rs.getInt("total_chunks"));
@@ -88,12 +88,12 @@ public class RagFileRepository {
     /**
      * 根据 kbId 查询所有文件
      */
-    public List<FileRecord> findByKbId(Long kbId) {
+    public List<FileRecord> findByKbId(String kbId) {
         String sql = "SELECT id, kb_id, filename, status, total_chunks, created_at, updated_at FROM kb_file WHERE kb_id = ? ORDER BY id DESC";
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
             FileRecord record = new FileRecord();
             record.setId(rs.getLong("id"));
-            record.setKbId(rs.getObject("kb_id") != null ? rs.getLong("kb_id") : null);
+            record.setKbId(rs.getObject("kb_id") != null ? rs.getString("kb_id") : null);
             record.setFilename(rs.getString("filename"));
             record.setStatus(rs.getString("status"));
             record.setTotalChunks(rs.getInt("total_chunks"));
