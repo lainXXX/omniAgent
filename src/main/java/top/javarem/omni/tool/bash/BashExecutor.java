@@ -1,10 +1,9 @@
 package top.javarem.omni.tool.bash;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PreDestroy; // 注意：如果是 SpringBoot 2.x 请换成 javax.annotation.PreDestroy
+import jakarta.annotation.PreDestroy;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
@@ -29,9 +28,6 @@ public class BashExecutor {
     private final SecurityInterceptor securityInterceptor;
     private final WorkingDirectoryManager workingDirectoryManager;
     private final ResponseFormatter formatter;
-
-    @Value("${agent.working-directory:${user.dir}}")
-    private String defaultWorkspace;
 
     private final ProcessTreeKiller processKiller = new ProcessTreeKiller();
 
@@ -84,23 +80,51 @@ public class BashExecutor {
         return ioReaderExecutor;
     }
 
-    private String resolveEffectiveWorkspace(String userWorkspace) {
-        if (userWorkspace == null || userWorkspace.isBlank()) {
-            return defaultWorkspace;
-        }
-        try {
-            Path path = Paths.get(userWorkspace).toAbsolutePath().normalize();
-            if (!Files.exists(path) || !Files.isDirectory(path)) {
-                log.warn("[BashExecutor] 用户指定的 workspace 无效: {}, 降级到默认: {}",
-                        userWorkspace, defaultWorkspace);
-                return defaultWorkspace;
+    /**
+     * 工作目录解析结果。成功时 path 非 null，失败时 error 非 null。
+     */
+    private static class WorkspaceResult {
+        final String path;
+        final String error;
+        static WorkspaceResult ok(String p) { return new WorkspaceResult(p, null); }
+        static WorkspaceResult fail(String e) { return new WorkspaceResult(null, e); }
+        private WorkspaceResult(String p, String e) { this.path = p; this.error = e; }
+    }
+
+    /**
+     * 解析并验证工作目录。绝不降级到默认值。
+     *
+     * <p>优先级：ToolContext 显式 workspace → WorkingDirectoryManager 可信 cwd → 报错</p>
+     */
+    private WorkspaceResult resolveEffectiveWorkspace(String userWorkspace) {
+        // 1. ToolContext 显式传了 workspace → 验证存在性
+        if (userWorkspace != null && !userWorkspace.isBlank()) {
+            try {
+                Path path = Paths.get(userWorkspace).toAbsolutePath().normalize();
+                if (!Files.exists(path)) {
+                    return WorkspaceResult.fail(
+                            "指定的工作目录不存在: " + userWorkspace);
+                }
+                if (!Files.isDirectory(path)) {
+                    return WorkspaceResult.fail(
+                            "指定路径不是目录: " + userWorkspace);
+                }
+                return WorkspaceResult.ok(path.toString().replace("\\", "/"));
+            } catch (Exception e) {
+                return WorkspaceResult.fail(
+                        "工作目录路径解析失败: " + userWorkspace + " (" + e.getMessage() + ")");
             }
-            return path.toString().replace("\\", "/");
-        } catch (Exception e) {
-            log.warn("[BashExecutor] workspace 解析异常: {}, 降级到默认: {}",
-                    userWorkspace, defaultWorkspace);
-            return defaultWorkspace;
         }
+
+        // 2. ToolContext 没传 → 查 WorkingDirectoryManager 的可信 cwd
+        if (workingDirectoryManager.hasVerifiedCwd()) {
+            Path dir = workingDirectoryManager.getCurrentDir();
+            return WorkspaceResult.ok(dir.toString().replace("\\", "/"));
+        }
+
+        // 3. 不可信且无显式指定 → 报错
+        return WorkspaceResult.fail(
+                "未指定工作目录，无法执行命令。\n请在客户端打开一个项目文件夹后重试。");
     }
 
     public String execute(String command, long timeoutMs, String userWorkspace) throws Exception {
@@ -112,8 +136,17 @@ public class BashExecutor {
      * @param acceptEdits 编辑模式：放行文件系统命令
      */
     public String execute(String command, long timeoutMs, String userWorkspace, boolean acceptEdits) throws Exception {
-        String effectiveWorkspace = resolveEffectiveWorkspace(userWorkspace);
-        workingDirectoryManager.syncWorkspace(effectiveWorkspace);
+        WorkspaceResult ws = resolveEffectiveWorkspace(userWorkspace);
+        if (ws.error != null) {
+            return "❌ " + ws.error + "\n命令: " + command;
+        }
+        String effectiveWorkspace = ws.path;
+
+        // 只在用户显式切了 workspace 时同步（标记 EXPLICIT_SYNC）
+        if (userWorkspace != null && !userWorkspace.isBlank()) {
+            workingDirectoryManager.syncWorkspace(effectiveWorkspace);
+        }
+
         SecurityInterceptor.CheckResult check = securityInterceptor.check(command, effectiveWorkspace, acceptEdits);
         boolean destructiveWarning = false;
 
@@ -137,8 +170,16 @@ public class BashExecutor {
     }
 
     public String executeBackground(String command, String userWorkspace) throws Exception {
-        String effectiveWorkspace = resolveEffectiveWorkspace(userWorkspace);
-        workingDirectoryManager.syncWorkspace(effectiveWorkspace);
+        WorkspaceResult ws = resolveEffectiveWorkspace(userWorkspace);
+        if (ws.error != null) {
+            return "❌ " + ws.error + "\n命令: " + command;
+        }
+        String effectiveWorkspace = ws.path;
+
+        if (userWorkspace != null && !userWorkspace.isBlank()) {
+            workingDirectoryManager.syncWorkspace(effectiveWorkspace);
+        }
+
         SecurityInterceptor.CheckResult check = securityInterceptor.check(command, effectiveWorkspace);
         if (check.type() == SecurityInterceptor.CheckResult.Type.DENY) {
             return formatter.formatError("安全拦截: " + check.message(), -1, command);
@@ -154,11 +195,17 @@ public class BashExecutor {
         // 【加速优化】针对 LLM 常用的耗时命令进行静默调优
         String optimizedCommand = optimizeCommand(command);
 
-        ProcessBuilder builder = new ProcessBuilder();
-        configureProcessBuilder(builder, optimizedCommand);
+        // ── sentinel wrapper ──
+        // 在命令末尾追加换行 + sentinel，捕获最终 cwd。
+        // 使用 \n（换行符）而不是 ; ，防止被命令末尾的 # 注释吞掉。
+        // sentinel 格式: ___OMNI_CWD_SENTINEL___cwd=/path___rc=0___
+        String sentinelLine = "\necho " + WorkingDirectoryManager.SENTINEL_MARKER
+                + "cwd=$(pwd)___rc=$?";
+        String wrappedCommand = optimizedCommand + sentinelLine;
 
-        Path trackedDir = workingDirectoryManager.getCurrentDir();
-        builder.directory(trackedDir.toFile());
+        ProcessBuilder builder = new ProcessBuilder();
+        configureProcessBuilder(builder, wrappedCommand);
+        builder.directory(Paths.get(effectiveWorkspace).toFile());
         builder.redirectErrorStream(true); // 合并 stderr 到 stdout
 
         Process process = builder.start();
@@ -205,7 +252,7 @@ public class BashExecutor {
             processKiller.kill(process);
             readerFuture.cancel(true);
             processRegistry.kill(pid);
-            workingDirectoryManager.trackAndValidate(rawOutput, null);
+            workingDirectoryManager.trackAndValidate(rawOutput);
             return formatter.formatTimeout(rawOutput, timeoutMs);
         }
 
@@ -218,11 +265,8 @@ public class BashExecutor {
 
         processRegistry.unregister(pid);
 
-        // 跟踪工作目录变化
-        Path newDir = workingDirectoryManager.trackAndValidate(rawOutput, null);
-        if (!newDir.equals(trackedDir)) {
-            log.info("[BashExecutor] 工作目录切换: -> {}", newDir);
-        }
+        // 从 sentinel 捕获最终工作目录
+        workingDirectoryManager.trackAndValidate(rawOutput);
 
         int exitCode = process.exitValue();
         if (exitCode == 0) {
