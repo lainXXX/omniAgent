@@ -3,440 +3,291 @@
 > Your personal AI Agent — omni-capable, locally running, built for developers who think in systems.
 
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.10-green.svg)](https://spring.io/projects/spring-boot)
-[![Spring AI](https://img.shields.io/badge/Spring%20AI-1.0.0-blue.svg)](https://spring.io/projects/spring-ai)
+[![Spring AI](https://img.shields.io/badge/Spring%20AI-1.1.3-blue.svg)](https://spring.io/projects/spring-ai)
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
+[![React](https://img.shields.io/badge/React-18-cyan.svg)](https://react.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**omniAgent** is a personal AI Agent powered by Spring Boot + Spring AI. It combines code understanding, document intelligence, semantic search, and an extensible skill system into a single intelligent assistant that runs entirely on your local machine.
-
-The name reflects its core promise: **omni** — all-seeing, all-knowing, all-capable.
+**omniAgent** is a personal AI Agent powered by Spring Boot + Spring AI. It combines code understanding, document intelligence, semantic search, multi-vendor LLM support, and an extensible skill/tool system into a single intelligent assistant that runs entirely on your local machine.
 
 ---
 
-## 1. 项目标题与简介
+## Features
 
-### 项目名称
-**omniAgent**
-
-### 一句话简介
-A local-first AI Agent that understands your code, processes your documents, searches your knowledge base, and grows with you through an extensible skill system.
-
-### Badges
-
-| Badge | Description |
-|-------|-------------|
-| `Spring Boot 3.5.10` | Core framework |
-| `Spring AI 1.0.0` | AI/Agent infrastructure |
-| `Java 21` | Runtime |
-| `MySQL + pgvector` | Persistence + Vector Search |
-| `MIT License` | Open source |
+| Category | Capabilities |
+|----------|-------------|
+| **Code Intelligence** | Read, write, edit, grep, glob files; execute shell commands with security validation |
+| **Multi-Vendor LLM** | Pluggable strategy pattern — DeepSeek, MiniMax (M2.7), Anthropic Claude proxied via MiniMax |
+| **Document Processing** | PDF, Word (DOCX), Markdown, TXT parsing with Apache Tika |
+| **RAG Knowledge Base** | Vector embedding (BAAI/bge-m3, 1024d) + pgvector similarity search + Rerank re-ranking |
+| **Recursive Chunking** | Token-aware parent-child splitting (800/200 tokens) with structure awareness |
+| **Skill System** | Hot-pluggable skills via SKILL.md files, auto-discovered at runtime |
+| **Sub-Agent System** | Fork agents with tool filtering, worktree isolation, session management |
+| **Web Capabilities** | Web search + content fetch, real-time internet information retrieval |
+| **Streaming Chat** | Real-time SSE streaming with thought/tool-call/text block rendering |
+| **Conversation Interrupt** | True backend LLM cancellation via AbortController + WebFlux Flux cancellation |
 
 ---
 
-## 2. 核心特性
+## Quick Start
 
-### 技术优势
+### Prerequisites
 
-| 特性 | 说明 |
-|------|------|
-| **Advisor Chain Pipeline** | 基于 Spring AI 的 Advisor 链式架构，支持请求/响应拦截、上下文压缩、消息格式化、对话历史注入 |
-| **流式响应 (Streaming)** | 支持 Stream 模式实时流式输出，提升交互体验 |
-| **智能上下文压缩** | 当对话过长时，自动对中间消息进行 LLM summarization，保留头部和尾部关键信息 |
-| **多轮对话持久化** | 所有对话历史存入 MySQL，跨 session 保持上下文连贯 |
-| **Sub-Agent 架构** | 支持创建和管理子 Agent 任务，实现复杂任务的分解与执行 |
-
-### 功能亮点
-
-| 模块 | 能力 |
-|------|------|
-| **代码智能** | 文件读写编辑、代码搜索 (grep/glob)、Shell 命令执行 |
-| **文档处理** | PDF、Word (DOCX)、Markdown、TXT 多格式解析；支持 LaTeX 公式、表格结构提取 |
-| **RAG 知识库** | 向量化存储 + pgvector 相似度检索 + Rerank 重排序 |
-| **递归分块 (Recursive Chunking)** | 基于 token 计数的递归文本分割，保证语义完整 |
-| **技能系统 (Skill System)** | 通过 Markdown 文件热插拔技能，运行时自动发现与注入 |
-| **Web 能力** | 网页搜索 + 内容抓取，实时获取互联网信息 |
-| **任务管理** | 内置任务状态追踪，支持长期任务中断与恢复 |
-
-### 性能指标
-
-| 指标 | 数值 |
-|------|------|
-| 向量嵌入维度 | 1024 (BAAI/bge-m3) |
-| 上下文压缩阈值 | 75% context window |
-| 单文件上传上限 | 100 MB |
-| 数据库连接池 (MySQL/PG) | max=5, min-idle=2 |
-
----
-
-## 3. 快速上手
-
-### 环境依赖
-
-| 依赖 | 版本要求 |
-|------|----------|
+| Dependency | Version |
+|-----------|---------|
 | Java | 21+ |
 | MySQL | 8.0+ |
-| PostgreSQL | 15+ (with pgvector extension) |
+| PostgreSQL | 15+ (with pgvector) |
 | Maven | 3.9+ |
+| Node.js | 18+ (frontend) |
 
-> **Note**: 确保 PostgreSQL 已安装 `pgvector` 扩展，MySQL 用于存储对话历史，PostgreSQL 用于向量检索。
-
-### 安装步骤
+### Setup
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/your-user/omniAgent.git
+# 1. Clone
+git clone https://github.com/LainXXX/omniAgent.git
 cd omniAgent
 
-# 2. 配置数据库
-# 确保 MySQL 中存在 rem-agent 数据库
-# 确保 PostgreSQL 中安装了 pgvector extension
+# 2. Configure databases
+# MySQL: create database rem-agent
+# PostgreSQL: create database springai with pgvector extension
 
-# 3. 修改配置
-# 编辑 src/main/resources/application-dev.yml 中的：
-#   - spring.datasource.url / username / password (MySQL)
-#   - spring.ai.vectorstore.pgvector.datasource.url / username / password (PostgreSQL)
-#   - spring.ai.openai.api-key (或切换为其他 AI Provider)
+# 3. Configure AI providers
+# Edit src/main/resources/application-dev.yml with your API keys
 
-# 4. 构建
-./mvnw clean package -DskipTests
-
-# 5. 运行
+# 4. Start backend (port 9090)
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+
+# 5. Start frontend dev server (port 9500, in another terminal)
+cd frontend
+npm install
+npm run dev
 ```
 
-服务启动后，访问 `http://localhost:8080` 即可开始与 omniAgent 对话。
+Open `http://localhost:9500` to start chatting.
 
-### 最小化示例
+---
 
-**发送一个 Chat 请求：**
+## Architecture
+
+### System Overview
+
+```
+┌─────────────┐     ┌──────────────────────────────────────────────────┐
+│  React SPA  │     │             Spring Boot Backend                  │
+│  :9500      │     │             :9090                                │
+│             │     │                                                  │
+│  App.tsx    │◄───►│  ChatController → ChatService                    │
+│  ChatInput  │ SSE │       → ChatModelStrategyFactory                 │
+│  ChatMessage│     │         ├── DeepSeekChatStrategy                 │
+│  Sidebar    │     │         ├── MiniMaxChatStrategy                  │
+│  ToolsSide  │     │         └── AnthropicChatStrategy                │
+│             │     │                                                  │
+│  Knowledge  │     │  Advisor Chain Pipeline                          │
+│  Base Panel│     │    MessageFormatAdvisor (order: 10000)            │
+│             │     │    ContextCompressionAdvisor (order: 4000)       │
+│  Question   │     │    LifecycleToolCallAdvisor (order: MAX-1)       │
+│  Inline     │     │    TaskProgressAdvisor (order: MAX-100)          │
+└─────────────┘     │                                                  │
+                    │  Tool System                                     │
+                    │    File Tools │ Web Tools │ RAG Tool             │
+                    │    Bash Tool │ Skill Tool │ Agent Tool           │
+                    │    AskUserQuestionTool │ Task Tool               │
+                    │                                                  │
+                    │  Data Stores                                      │
+                    │    MySQL (chat history)                           │
+                    │    PostgreSQL + pgvector (embeddings)             │
+                    └──────────────────────────────────────────────────┘
+```
+
+### Advisor Chain Flow
+
+```
+Request → MessageFormatAdvisor.before()
+       → LifecycleToolCallAdvisor.doInitializeLoopStream()
+       → Tool Call Loop (doGetNextInstructionsForToolCallStream)
+       → ChatClientMessageAggregator.aggregateChatClientResponse()
+       → LifecycleToolCallAdvisor.doFinalizeLoopStream()
+       → MessageFormatAdvisor.after()
+       → Response
+```
+
+### SSE Streaming Protocol
+
+```
+data:{"id":"...","choices":[{"delta":{"content":"...","reasoning_content":"...","tool_calls":[...]},"finish_reason":"tool_calls"}]}
+data:[DONE]
+```
+
+- Backend sends OpenAI-Compatible delta chunks
+- Frontend `streamChat()` parses `data:` lines, yields `StreamEvent` objects
+- Events: `text`, `thought`, `tool-call`, `round-end`, `dangerous-command`
+
+---
+
+## Project Structure
+
+### Backend (`src/main/java/top/javarem/omni/`)
+
+```
+├── controller/
+│   ├── ChatController.java          # SSE streaming chat endpoint
+│   ├── AskUserQuestionController.java # Question polling & answering
+│   ├── ApprovalController.java       # Dangerous command approval + SSE push
+│   ├── KnowledgeBaseController.java  # KB CRUD + search
+│   ├── PetController.java            # Pet management demo
+│   └── WorkspaceController.java      # JavaFX folder picker dialog
+├── service/
+│   ├── ChatService.java              # Chat orchestration, multi-vendor dispatch
+│   ├── AskUserQuestionService.java   # Question flow management
+│   └── rag/
+│       ├── AdvancedRagEtlService.java # ETL pipeline
+│       ├── RecursiveTextSplitter.java # Token-aware chunking
+│       ├── MarkdownHeaderSplitter.java # Markdown-aware splitting
+│       └── TokenCounter.java         # JTokkit-based counting
+├── strategy/                         # LLM multi-vendor adapter
+│   ├── ChatModelStrategy.java        # Interface
+│   ├── ChatModelStrategyFactory.java # Strategy registry
+│   ├── DeepSeekChatStrategy.java     # OpenAI-compatible
+│   ├── MiniMaxChatStrategy.java      # MiniMax native
+│   ├── AnthropicChatStrategy.java    # Anthropic Messages API
+│   └── SseChunkEncoder.java          # Unified chunk serialization
+├── advisors/
+│   ├── MessageFormatAdvisor.java     # System prompt + skill injection
+│   ├── ContextCompressionAdvisor.java # Head+tail+summary compression
+│   ├── LifecycleToolCallAdvisor.java  # Tool loop + persistence
+│   └── TaskProgressAdvisor.java      # Execution round tracking
+├── tool/
+│   ├── file/ (Read, Write, Edit, Grep, Glob)
+│   ├── web/ (WebSearch, WebFetch)
+│   ├── rag/ (RagTool)
+│   ├── bash/ (BashTool, with security pipeline)
+│   ├── agent/ (AgentTool, WorktreeManager, AgentSessionManager)
+│   ├── SkillToolConfig.java
+│   ├── AskUserQuestionTool.java
+│   ├── TaskToolConfig.java
+│   └── ToolsManager.java
+├── repository/
+│   ├── chat/MemoryRepository.java    # MySQL chat history
+│   └── rag/ (RagFileRepository, RagChunkRepository)
+├── model/
+│   ├── chat/ (ChatCompletionChunk, ChatDelta, ToolCall, etc.)
+│   └── request/ChatRequest.java
+├── config/
+│   ├── AiConfig.java                 # AI model beans
+│   ├── CorsConfig.java               # CORS for :9500↔:9090
+│   ├── WebConfig.java
+│   ├── ThreadPoolConfig.java
+│   ├── RagConfig.java
+│   └── SkillConfig.java
+├── loader/
+│   ├── SkillLoader.java              # SKILL.md discovery
+│   └── SystemMessageLoader.java      # System prompt loading
+└── Application.java                  # Entry point
+```
+
+### Frontend (`frontend/src/`)
+
+```
+├── App.tsx                    # Main chat page, SSE streaming, state machine
+├── main.tsx                   # React entry + BrowserRouter
+├── index.css                  # Tailwind v4 + custom styles
+├── api/
+│   ├── chat.ts                # StreamChat async generator + polling APIs
+│   ├── knowledgeBase.ts       # KB CRUD
+│   ├── pet.ts                 # Pet CRUD
+│   └── rag.ts                 # RAG ETL upload
+├── components/
+│   ├── ChatInput.tsx          # Textarea, send/stop, workspace picker, bypass toggle
+│   ├── ChatMessage.tsx        # Block-rendered message (thought/tool-call/text)
+│   ├── Sidebar.tsx            # Conversation list (Today/Yesterday/Older)
+│   ├── ToolsSidebar.tsx       # KB button + fullscreen overlay
+│   ├── QuestionInline.tsx     # Multi-step question form (single/multi-select)
+│   ├── CommandApprovalInline.tsx # Inline command approval card
+│   ├── HtmlArtifact.tsx       # HTML preview tab
+│   ├── KnowledgeBasePanel.tsx # Full KB management UI
+│   ├── MarkdownRenderer.tsx   # react-markdown + Prism highlighting
+│   ├── RagUploadTool.tsx      # RAG upload component
+│   └── pet/PetManagement.tsx  # Pet CRUD grid
+├── types/index.ts             # Message, Conversation, Question, etc.
+└── utils/
+    └── messageParser.ts       # <think> tag parsing, block detection
+```
+
+---
+
+## Configuration
+
+### AI Vendors
+
+| Vendor | Model | Usage |
+|--------|-------|-------|
+| DeepSeek | `deepseek-v4-flash` | Default chat (OpenAI-compatible adapter) |
+| MiniMax | `MiniMax-M2.7` | Alternative chat |
+| Anthropic | `MiniMax-M2.7` (proxied) | Alternative via MiniMax proxy |
+| Embedding | `BAAI/bge-m3` (1024d) | Vector embeddings via SiliconFlow |
+| Rerank | `BAAI/bge-reranker-v2-m3` | Result re-ranking via SiliconFlow |
+
+### Databases
+
+| Database | Purpose | Connection |
+|----------|---------|------------|
+| MySQL `rem-agent` | Chat history, users, tasks | `localhost:3306` |
+| PostgreSQL `springai` | Vector embeddings (pgvector) | `localhost:5432` |
+
+---
+
+## Development
 
 ```bash
-curl -X POST http://localhost:8080/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "你好，帮我解释一下什么是 RAG",
-    "conversationId": "user-001"
-  }'
+# Backend
+./mvnw compile                             # Fast check
+./mvnw test                                # Run all tests
+./mvnw spring-boot:run                     # Dev profile by default
+
+# Frontend
+cd frontend
+npm run dev                                # Vite dev server :9500
+npm run build                              # Production build
+npm run test                               # Vitest
 ```
 
-**omniAgent 将自动：**
-1. 加载对话历史（如果 conversationId 存在）
-2. 注入相关 Skills
-3. 执行 Tool Call（如需要）
-4. 返回流式响应
+### Key Design Decisions
+
+- **Advisor Chain**: Spring AI's pipeline architecture, ordered by `getOrder()`
+- **Multi-Vendor LLM**: Strategy pattern, vendor chosen per request via `vendor` field
+- **Tool Auto-Discovery**: `ToolsManager` scans all `AgentTool` beans via `ToolCallbacks.from()`
+- **Skill Discovery**: Scans `~/.omni/skills/**/SKILL.md` at runtime (no restart needed)
+- **Workspace Picker**: JavaFX `DirectoryChooser` for native Windows folder browsing
+- **Streaming Abort**: `AbortController` → fetch cancellation → WebFlux `Flux` cancellation
+- **Processing Time**: `performance.now()` timing, displayed per assistant message
+- **Auth**: Removed entirely — single-user local application
 
 ---
 
-## 4. 架构与设计
+## Roadmap
 
-### 设计理念
-
-omniAgent 基于 **Spring AI Advisor 链** 构建，采用**管道式请求处理**：
-
-- **消息格式化** → **对话初始化** → **工具调用循环** → **对话终结** → **响应后处理**
-- 每个环节职责单一，通过 `Order` 控制执行顺序
-- 支持 Stream 和 Call 两种模式
-
-### 架构图
-
-```
-                                    ┌─────────────────────────────────────┐
-                                    │           omniAgent                  │
-                                    │                                      │
-  Request                          │  ┌────────────────────────────────┐  │
-──────────►  ┌──────────────────┐  │  │   MessageFormatAdvisor         │  │
-            │  Client Request   │  │  │   Order: 10000                  │  │
-            └────────┬───────────┘  │  │   • 加载 System Prompt          │  │
-                     │               │  │   • 注入 Skills                │  │
-                     ▼               │  │   • 加载对话历史               │  │
-            ┌──────────────────┐    │  └──────────────┬───────────────┘  │
-            │ LifecycleTool    │    │                 │
-            │ CallAdvisor      │    │                 ▼
-            │ Order: MAX-1     │    │  ┌────────────────────────────────┐  │
-            │ • 持久化用户消息  │    │  │   LifecycleToolCallAdvisor     │  │
-            │ • 持久化助手消息  │    │  │   Order: Integer.MAX_VALUE-1   │  │
-            │ • Stream/Call    │    │  │                                │  │
-            │   模式支持        │    │  │  ┌──────────────────────────┐  │  │
-            └────────┬─────────┘    │  │  │   Tool Call Loop         │  │  │
-                     │               │  │  │                          │  │  │
-                     ▼               │  │  │  ┌─────────┐ ┌─────────┐ │  │  │
-            ┌──────────────────┐    │  │  │  │ File    │ │ Web     │ │  │  │
-            │ ContextCompression│    │  │  │  │ Tools   │ │ Tools   │ │  │  │
-            │ Advisor           │    │  │  │  ├─────────┤ ├─────────┤ │  │  │
-            │ Order: 4000       │    │  │  │  │ RAG     │ │ Bash    │ │  │  │
-            │ • 压缩过长上下文  │    │  │  │  │ Tools   │ │ Tool    │ │  │  │
-            │ • Head + Tail     │    │  │  │  ├─────────┤ ├─────────┤ │  │  │
-            │   保留策略        │    │  │  │  │ Skill   │ │ Task    │ │  │  │
-            └──────────────────┘    │  │  │  │ Tool    │ │ Tool    │ │  │  │
-                                    │  │  │  └─────────┘ └─────────┘ │  │  │
-                                    │  │  └──────────────────────────┘  │  │
-                                    │  └──────────────┬───────────────┘  │
-                                    │                 │
-                                    │                 ▼
-                                    │  ┌────────────────────────────────┐  │
-                                    │  │   LifecycleToolCallAdvisor     │  │
-                                    │  │   doFinalizeLoop()             │  │
-                                    │  └──────────────┬───────────────┘  │
-                                    │                 │
-                                    │                 ▼
-                                    │  ┌────────────────────────────────┐  │
-                                    │  │   MessageFormatAdvisor.after() │  │
-                                    │  │   Order: 10000                 │  │
-                                    │  └────────────────────────────────┘  │
-                                    └─────────────────────────────────────┘
-                                                                 │
-                                                                 ▼
-                                                            Response
-```
-
-### 核心组件
-
-| 组件 | 职责 | 包路径 |
-|------|------|--------|
-| `LifecycleToolCallAdvisor` | 工具调用生命周期 + 消息持久化 | `advisor/` |
-| `MessageFormatAdvisor` | System Prompt 加载、Skill 注入、历史加载 | `advisor/` |
-| `ContextCompressionAdvisor` | 上下文压缩与摘要 | `advisor/` |
-| `ToolsManager` | 工具注册与调用分发 | `tool/` |
-| `SkillLoader` | 扫描并加载 `resources/skills/` 下的 SKILL.md | `loader/` |
-| `SystemMessageLoader` | 加载系统提示词模板 | `loader/` |
-| `MemoryRepository` | MySQL 对话历史读写 | `repository/chat/` |
-| `AdvancedRagEtlService` | 文档 ETL 流水线 | `service/rag/` |
-| `AgentTool` | Sub-Agent 创建与调度 | `tool/agent/` |
-
-### 数据模型
-
-**对话历史 (MySQL)**
-```
-spring_ai_chat_memory
-├── id            BIGINT (PK, AUTO_INCREMENT)
-├── conversation_id  VARCHAR(36)
-├── content       LONGTEXT
-├── type          VARCHAR(10)   -- USER | ASSISTANT | SYSTEM | TOOL
-└── timestamp     TIMESTAMP
-```
-
-**向量知识库 (PostgreSQL + pgvector)**
-```
-parent_chunk_record
-├── id              BIGINT (PK)
-├── file_id         BIGINT (FK)
-├── parent_id       BIGINT (nullable)
-├── content         TEXT
-├── metadata        JSONB
-├── embedding       vector(1024)
-└── created_at      TIMESTAMP
-```
+- [x] Advisor Chain pipeline
+- [x] Multi-vendor LLM strategy (DeepSeek / MiniMax / Anthropic)
+- [x] Streaming SSE protocol with thought/tool-call blocks
+- [x] Tool system (File, Web, RAG, Bash, Skill, Task, Agent)
+- [x] Sub-Agent system with worktree isolation
+- [x] RAG ETL pipeline + recursive chunking
+- [x] Skill hot-plug system
+- [x] Dangerous command approval flow
+- [x] AskUserQuestion inline form (single/multi-select)
+- [x] Conversation interruption (real backend abort)
+- [x] Processing time display
+- [x] JavaFX native workspace folder picker
+- [ ] Knowledge base incremental updates
+- [ ] Multi-modal support (image/audio)
+- [ ] Long-term agent memory
+- [ ] Performance optimization
 
 ---
 
-## 5. 配置说明
+## License
 
-### 配置文件
+MIT License © 2025-2026 LainXXX
 
-| 文件 | 说明 | 激活方式 |
-|------|------|----------|
-| `application.yml` | 公共配置 | 默认加载 |
-| `application-dev.yml` | 开发环境配置 | `spring.profiles.active=dev` |
-| `application-test.yml` | 测试环境配置 | `spring.profiles.active=test` |
-
-### 关键配置项
-
-#### AI Provider
-
-```yaml
-spring:
-  ai:
-    openai:
-      api-key: ${OPENAI_API_KEY}
-      base-url: https://api.siliconflow.cn  # 或其他兼容 API
-      embedding:
-        enabled: true
-        options:
-          model: BAAI/bge-m3
-    minimax:
-      api-key: ${MINIMAX_API_KEY}
-      base-url: https://api.minimaxi.com
-      chat:
-        options:
-          model: MiniMax-M2.7
-          temperature: 1.0
-```
-
-#### 数据库
-
-```yaml
-# MySQL (对话历史)
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:3306/rem-agent
-    username: root
-    password: root
-
-# PostgreSQL (向量存储)
-spring:
-  ai:
-    vectorstore:
-      pgvector:
-        embedding-dimension: 1024
-        distance-type: COSINE_DISTANCE
-        index-type: HNSW
-        datasource:
-          url: jdbc:postgresql://localhost:5432/springai
-          username: postgres
-          password: postgres
-```
-
-#### 上下文压缩
-
-```yaml
-spring:
-  ai:
-    context:
-      compression:
-        enabled: true
-        context-window: 204800      # context window 大小
-        threshold: 0.75             # 超过 75% 开始压缩
-        keepEarliest: 2             # 保留最早 2 条消息
-        keepRecent: 4               # 保留最近 4 条消息
-```
-
-#### RAG & Rerank
-
-```yaml
-spring:
-  ai:
-    rerank:
-      enabled: true
-      api-key: ${RERANK_API_KEY}
-      base-url: https://api.siliconflow.cn
-      model: BAAI/bge-reranker-v2-m3
-      top-n: 3
-```
-
----
-
-## 6. 开发与测试
-
-### 常用命令
-
-```bash
-# 编译（快速检查）
-./mvnw compile
-
-# 运行测试
-./mvnw test
-
-# 运行单个测试
-./mvnw test -Dtest=ClassName#methodName
-
-# 构建（跳过测试）
-./mvnw clean package -DskipTests
-
-# 仅运行测试覆盖率
-./mvnw test jacoco:report
-```
-
-### 项目结构
-
-```
-src/main/java/top/javarem/skillDemo/
-├── loader/                     # Skill 与 System Prompt 加载
-│   ├── SkillLoader.java        # 扫描 resources/skills/ 目录
-│   └── SystemMessageLoader.java
-├── advisor/                    # Advisor 链核心
-│   ├── LifecycleToolCallAdvisor.java
-│   ├── MessageFormatAdvisor.java
-│   └── ContextCompressionAdvisor.java
-├── tool/                      # 工具定义
-│   ├── file/                   # 文件操作工具
-│   │   ├── ReadToolConfig.java
-│   │   ├── WriteToolConfig.java
-│   │   ├── EditToolConfig.java
-│   │   ├── GrepToolConfig.java
-│   │   └── GlobToolConfig.java
-│   ├── web/                    # Web 工具
-│   │   ├── WebSearchToolConfig.java
-│   │   └── WebFetchToolConfig.java
-│   ├── rag/                    # RAG 工具
-│   │   └── RagToolConfig.java
-│   ├── agent/                  # Sub-Agent 工具
-│   │   └── AgentToolConfig.java
-│   ├── ToolsManager.java       # 工具注册与分发
-│   └── SkillToolConfig.java
-├── service/                    # 业务逻辑
-│   └── rag/
-│       ├── AdvancedRagEtlService.java   # ETL 流水线
-│       ├── RecursiveTextSplitter.java  # 递归分块
-│       ├── MarkdownHeaderSplitter.java  # Markdown 感知分块
-│       └── TokenCounter.java           # Token 计数
-├── repository/                 # 数据访问层
-│   ├── chat/
-│   │   └── MemoryRepository.java    # 对话历史
-│   └── rag/
-│       ├── RagFileRepository.java    # 文件记录
-│       └── RagChunkRepository.java   # Chunk 存储
-└── controller/
-    └── ChatController.java
-```
-
-### 代码风格
-
-- **注释**: 仅在复杂逻辑处添加解释"为什么"的注释
-- **命名**: 语义化，避免 `data`、`temp` 等模糊命名
-- **结构**: Early Return，单一职责
-- **日志**: `[ClassName]` 前缀，结构化输出
-
-详细规范见 [docs/DEVELOPMENT_GUIDELINES.md](docs/DEVELOPMENT_GUIDELINES.md)。
-
----
-
-## 7. 路线图
-
-- [x] **Advisor Chain 架构** — 基于 Spring AI 的管道式 Agent
-- [x] **多工具系统** — 文件、Web、RAG、Bash、Skill、Task、Agent
-- [x] **持久化对话** — MySQL 存储对话历史
-- [x] **上下文压缩** — LLM summarization 自动压缩长对话
-- [x] **RAG ETL 流水线** — 多格式文档解析与向量化
-- [x] **技能热插拔** — `resources/skills/<name>/SKILL.md` 动态加载
-- [x] **Sub-Agent 机制** — 复杂任务的分解与并行执行
-- [ ] **增量索引更新** — 支持知识库的增量更新与删除
-- [ ] **多模态支持** — 图片、音频的解析与理解
-- [ ] **Agent 记忆机制** — 更长期的知识积累与遗忘策略
-- [ ] **性能优化** — 向量检索加速、连接池调优
-
----
-
-## 8. 贡献指南与许可证
-
-### 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-**提交流程：**
-1. Fork 本仓库
-2. 创建 Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'feat(scope): add amazing feature'`)
-4. Push 到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
-
-详细规范见 [docs/DEVELOPMENT_GUIDELINES.md](docs/DEVELOPMENT_GUIDELINES.md)。
-
-### 许可证
-
-本项目基于 **MIT License** 开源。详见 [LICENSE](LICENSE) 文件。
-
----
-
----
-
-## 作者
-
-**omniAgent** © 2025-2026 LainXXX
-
-- GitHub: [https://github.com/LainXXX](https://github.com/LainXXX)
-- Project: [https://github.com/LainXXX/omniAgent](https://github.com/LainXXX/omniAgent)
-
----
-
-**omniAgent** — 一个 AI Agent，解决你所有的本地开发需求。
+GitHub: [https://github.com/LainXXX](https://github.com/LainXXX)

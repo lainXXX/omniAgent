@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, FormEvent, KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, FormEvent, KeyboardEvent } from 'react';
 import { TOOLS_TOGGLE_EVENT } from './ToolsSidebar';
 
 interface ChatInputProps {
@@ -8,12 +8,27 @@ interface ChatInputProps {
   onWorkspaceChange?: (ws: string) => void;
   bypassApproval?: boolean;
   onBypassApprovalChange?: (enabled: boolean) => void;
+  isStreaming?: boolean;
+  onStop?: () => void;
 }
 
-export function ChatInput({ onSend, disabled, workspace = '', onWorkspaceChange, bypassApproval = false, onBypassApprovalChange }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, workspace = '', onWorkspaceChange, bypassApproval = false, onBypassApprovalChange, isStreaming, onStop }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [showWorkspace, setShowWorkspace] = useState(false);
+  const [selectingFolder, setSelectingFolder] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const wsDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showWorkspace) return;
+    const handleClick = (e: MouseEvent) => {
+      if (wsDropdownRef.current && !wsDropdownRef.current.contains(e.target as Node)) {
+        setShowWorkspace(false);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', handleClick), 0);
+    return () => document.removeEventListener('click', handleClick);
+  }, [showWorkspace]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -41,9 +56,9 @@ export function ChatInput({ onSend, disabled, workspace = '', onWorkspaceChange,
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-2 sm:p-4 bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent">
+    <form onSubmit={handleSubmit} className="p-2 sm:p-4 bg-gradient-to-t from-zinc-50 dark:from-zinc-950 via-zinc-50 dark:via-zinc-950 to-transparent">
       <div className="max-w-3xl mx-auto">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-2 sm:px-3 py-2 shadow-2xl focus-within:border-zinc-600 transition-colors">
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-2 sm:px-3 py-2 shadow-2xl focus-within:border-blue-500 dark:focus-within:border-zinc-600 transition-colors">
           <textarea
             ref={textareaRef}
             value={input}
@@ -52,9 +67,9 @@ export function ChatInput({ onSend, disabled, workspace = '', onWorkspaceChange,
             placeholder="Message OmniAgent..."
             disabled={disabled}
             rows={1}
-            className="w-full bg-transparent border-none outline-none resize-none text-zinc-200 text-sm placeholder-zinc-700 max-h-24 py-1 px-1 font-sans leading-relaxed"
+            className="w-full bg-transparent border-none outline-none resize-none text-zinc-900 dark:text-zinc-200 text-sm placeholder-zinc-400 dark:placeholder-zinc-700 max-h-24 py-1 px-1 font-sans leading-relaxed"
           />
-          <div className="flex justify-between items-center mt-2 pt-2 border-t border-zinc-800/50">
+          <div className="flex justify-between items-center mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800/50">
             <div className="flex items-center gap-2">
               {/* Workspace Selector */}
               <div className="relative">
@@ -64,7 +79,7 @@ export function ChatInput({ onSend, disabled, workspace = '', onWorkspaceChange,
                   className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded transition-colors max-w-[200px] ${
                     workspace
                       ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40 hover:bg-blue-500/30'
-                      : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
+                      : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                   }`}
                   title="Workspace 设置"
                 >
@@ -78,41 +93,61 @@ export function ChatInput({ onSend, disabled, workspace = '', onWorkspaceChange,
                     </>
                   ) : (
                     <>
-                      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                       </svg>
-                      <span className="hidden sm:inline">默认</span>
                     </>
                   )}
                 </button>
 
                 {/* Workspace Dropdown */}
                 {showWorkspace && (
-                  <div className="absolute bottom-full left-0 mb-2 w-64 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50">
-                    <div className="p-3 border-b border-zinc-800">
-                      <input
-                        type="text"
-                        value={workspace}
-                        onChange={(e) => onWorkspaceChange?.(e.target.value)}
-                        placeholder="输入 Workspace 路径..."
-                        className="w-full px-2.5 py-1.5 text-xs bg-zinc-800 border border-zinc-700 rounded text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-                        autoFocus
-                        onBlur={() => setTimeout(() => setShowWorkspace(false), 200)}
-                      />
-                    </div>
-                    <div className="p-2">
-                      <p className="text-[10px] text-zinc-500 mb-1.5">当前 Workspace:</p>
-                      <p className="text-xs text-zinc-300 truncate font-mono bg-zinc-800 px-2 py-1 rounded">
-                        {workspace || '使用项目默认目录'}
-                      </p>
+                  <div ref={wsDropdownRef} className="absolute bottom-full left-0 mb-2 w-72 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl z-50">
+                    <div className="p-3">
+                      {workspace && (
+                        <p className="text-xs text-zinc-700 dark:text-zinc-300 truncate font-mono bg-zinc-100 dark:bg-zinc-800 px-2 py-1.5 rounded mb-3">
+                          {workspace}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        disabled={selectingFolder}
+                        onClick={async () => {
+                          setSelectingFolder(true);
+                          try {
+                            const res = await fetch('/api/workspace/dialog');
+                            const data = await res.json();
+                            if (data.path) {
+                              onWorkspaceChange?.(data.path);
+                              setShowWorkspace(false);
+                            }
+                          } catch {
+                            // User cancelled or API error
+                          } finally {
+                            setSelectingFolder(false);
+                          }
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors disabled:opacity-50"
+                      >
+                        {selectingFolder ? (
+                          <span className="animate-pulse">打开中...</span>
+                        ) : (
+                          <>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                            </svg>
+                            打开文件夹
+                          </>
+                        )}
+                      </button>
                     </div>
                     {workspace && (
-                      <div className="p-2 border-t border-zinc-800">
+                      <div className="pb-2 px-3">
                         <button
                           onClick={() => { onWorkspaceChange?.(''); setShowWorkspace(false); }}
-                          className="w-full text-xs text-zinc-500 hover:text-blue-400 transition-colors text-center"
+                          className="w-full text-xs text-zinc-500 dark:text-zinc-500 hover:text-blue-400 transition-colors text-center"
                         >
-                          重置为默认
+                          移除
                         </button>
                       </div>
                     )}
@@ -124,7 +159,7 @@ export function ChatInput({ onSend, disabled, workspace = '', onWorkspaceChange,
               <button
                 type="button"
                 onClick={() => window.dispatchEvent(new Event(TOOLS_TOGGLE_EVENT))}
-                className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+                className="p-1.5 text-zinc-500 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
                 title="工具面板"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -156,25 +191,26 @@ export function ChatInput({ onSend, disabled, workspace = '', onWorkspaceChange,
                 )}
               </button>
             </div>
-            <button
-              type="submit"
-              disabled={!input.trim() || disabled}
-              className={`px-3 py-1 rounded text-xs font-bold transition-all disabled:cursor-not-allowed ${
-                disabled
-                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
-                  : 'bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40'
-              }`}
-            >
-              {disabled ? (
-                <span className="flex items-center gap-1">
-                  <span className="flex gap-0.5">
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </span>
-                </span>
-              ) : 'Send'}
-            </button>
+            {isStreaming ? (
+              <button
+                type="button"
+                onClick={onStop}
+                className="px-3 py-1 rounded text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition-colors flex items-center gap-1.5"
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 16 16">
+                  <rect x="3" y="3" width="10" height="10" rx="1" />
+                </svg>
+                停止
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!input.trim() || disabled}
+                className="px-3 py-1 rounded text-xs font-bold bg-zinc-100 hover:bg-white text-zinc-950 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                Send
+              </button>
+            )}
           </div>
         </div>
       </div>

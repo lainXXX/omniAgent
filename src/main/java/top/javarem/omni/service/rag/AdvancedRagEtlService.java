@@ -654,7 +654,7 @@ public class AdvancedRagEtlService {
     public void deleteChildChunksByFileId(Long fileId) {
         try {
             // 从向量库表直接查询关联的子块ID
-            String sql = "SELECT id FROM vector_store WHERE (metadata::jsonb)->>'file_id' = ?";
+            String sql = "SELECT id FROM vector_store WHERE (metadata::jsonb)->>'fileId' = ?";
             List<String> ids = pgVectorJdbcTemplate.queryForList(sql, String.class, String.valueOf(fileId));
 
             if (!ids.isEmpty()) {

@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 * {
   box-sizing: border-box;
 }
@@ -17,16 +19,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+/* Light scrollbar */
 ::-webkit-scrollbar-thumb {
   background: #d1d5db;
   border-radius: 3px;
@@ -36,6 +29,7 @@ body {
   background: #9ca3af;
 }
 
+/* Dark scrollbar */
 .dark ::-webkit-scrollbar-thumb {
   background: #4b5563;
 }

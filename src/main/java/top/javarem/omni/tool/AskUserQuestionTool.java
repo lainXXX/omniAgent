@@ -76,8 +76,9 @@ public class AskUserQuestionTool implements AgentTool {
             """)
     public CompletableFuture<AskUserResponse> askUserQuestion(
             @ToolParam(description = "Question request in JSON format containing 1~4 questions")
-            AskUserQuestionRequest request) {
+            String requestJson) {
 
+        AskUserQuestionRequest request = AskUserQuestionRequest.fromJson(requestJson);
         log.info("[AskUserQuestion] Tool called with {} question(s)", request.questions().size());
 
         // 验证问题数量

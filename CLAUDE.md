@@ -4,164 +4,98 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Spring Boot 3.5.10** AI Agent that provides AI-powered tools for code understanding, document processing, and semantic search capabilities.
+**OmniAgent** — a Spring Boot 3.5.10 AI Agent system with multi-vendor LLM support, tool-calling capabilities, RAG document processing, and a React/Vite frontend. Designed as a graduation thesis project.
+
+---
 
 ## Build & Run Commands
 
 ```bash
-# Build the project
-./mvnw clean package -DskipTests
-
-# Run the application
-./mvnw spring-boot:run
-
-# Run with dev profile
+# Backend
+./mvnw clean package -DskipTests          # Build
+./mvnw spring-boot:run                    # Run (dev profile active by default)
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+./mvnw test                               # Run all tests
+./mvnw test -Dtest=ClassName#methodName   # Single test
+./mvnw compile                            # Fast check
 
-# Run tests
-./mvnw test
-
-# Run a single test
-./mvnw test -Dtest=ClassName#methodName
-
-# Compile only (fast check)
-./mvnw compile
+# Frontend (separate Node project)
+cd frontend
+npm run dev                               # Dev server on :9500
+npm run build                             # Production build
+npm run test                              # Vitest
 ```
 
-## Architecture
+---
+
+## Backend Architecture (`src/main/java/top/javarem/omni/`)
+
+### Package Structure
+
+| Package | Responsibility |
+|---------|---------------|
+| `controller/` | REST endpoints: chat, auth, questions, knowledge-base, pet |
+| `service/` | Business logic: ChatService, AskUserQuestionService, RAG ETL |
+| `service/rag/` | RAG pipeline: ETL, text splitting, token counting |
+| `service/chat/` | LLM chat orchestration, ChatModelStrategy multi-vendor adapter |
+| `service/chat/strategy/` | `DeepSeekChatStrategy`, `MiniMaxChatStrategy`, `AnthropicChatStrategy` |
+| `advisors/` | Spring AI Advisor chain: lifecycle, context compression, message format, task progress |
+| `tool/` | All AgentTool implementations |
+| `tool/file/` | Read/Write/Edit/Grep/Glob file tools |
+| `tool/web/` | WebSearch, WebFetch tools |
+| `tool/bash/` | Bash execution with security validation |
+| `tool/rag/` | RAG query tool |
+| `tool/agent/` | Sub-agent system: launch, session management, worktree isolation |
+| `tool/approval/` | AskUserQuestion and DangerousCommand approval flow |
+| `repository/chat/` | MySQL chat history (MemoryRepository) |
+| `repository/rag/` | PostgreSQL kb_file operations (RagFileRepository) |
+| `config/` | Spring configuration: security, web, thread pool, RAG, skills |
+| `model/` | DTOs, entities, records |
+| `security/` | JWT auth, user details, filters |
+| `loader/` | SkillLoader, SystemMessageLoader |
+
+### Controllers
+
+| Controller | Endpoints | Purpose |
+|------------|-----------|---------|
+| `ChatController` | `POST /chat/stream` | SSE streaming chat, multi-vendor dispatch |
+| `AuthController` | `/api/auth/login`, `/register`, `/logout`, `/me` | JWT-based authentication |
+| `AskUserQuestionController` | `GET /api/questions/pending`, `POST /api/questions/{id}/answer` | Question polling & answering |
+| `ApprovalController` | `GET /approval/pending`, `POST /approval`, `GET /approval-events` | Dangerous command approval + SSE push |
+| `KnowledgeBaseController` | `/api/knowledge-base/stats`, `/files`, `/files/upload`, `/files/{id}`, `/files/{id}/retry`, `/search` | Knowledge base CRUD + search |
+| `PetController` | `/api/pet` CRUD | Pet management demo |
+
+### LLM Multi-Vendor Adapter (`service/chat/`)
+
+Strategy pattern for multi-LLM support:
+
+```
+ChatService → ChatModelStrategyFactory → ChatModelStrategy (interface)
+                                           ├── DeepSeekChatStrategy
+                                           ├── MiniMaxChatStrategy
+                                           └── AnthropicChatStrategy
+```
+
+- Each strategy implements `doStream()` returning `Flux<String>` (raw JSON chunks)
+- `SseChunkEncoder` wraps raw JSON, extracts `id` for SSE event IDs
+- Backend sends: `data:{json}\n\n` — no space after `data:`, no `event:` field
+- Protocol: OpenAI-Compatible delta format (`delta.content`, `delta.reasoning_content`, `delta.tool_calls`)
+- Fallback chain: if primary vendor fails, try next; if all fail, fallback to DeepSeek
 
 ### Advisor Chain System
 
-The chat system uses Spring AI's Advisor pattern to process requests/responses in a pipeline:
+Spring AI Advisor pipeline (ordered by `getOrder()`):
 
 | Advisor | Order | Responsibility |
 |---------|-------|----------------|
-| `LifecycleToolCallAdvisor` | `Integer.MAX_VALUE - 1000` | Tool call lifecycle management, stores chat history |
-| `ContextCompressionAdvisor` | 4000 | Context compression for long conversations |
-| `MessageFormatAdvisor` | 10000 | Message formatting, history loading, skill injection |
-| `TaskProgressAdvisor` | `Integer.MAX_VALUE - 100` | Tracks task execution rounds, detects stalled tasks |
+| `MessageFormatAdvisor` | `ORDER_BEFORE_PROMPT_CONVERSION` (10000) | Loads system prompt, injects skills, loads history |
+| `ContextCompressionAdvisor` | 4000 | Compresses long conversations (head+tail+summary) |
+| `LifecycleToolCallAdvisor` | `Integer.MAX_VALUE - 1000` | Tool call lifecycle, message persistence, stream/call modes |
+| `TaskProgressAdvisor` | `Integer.MAX_VALUE - 100` | Tracks exec_rounds, detects stalled tasks |
 
-**Flow**: `MessageFormatAdvisor.before()` → `LifecycleToolCallAdvisor.doInitializeLoop()` → `ToolCall Loop` → `LifecycleToolCallAdvisor.doFinalizeLoop()` → `MessageFormatAdvisor.after()`
+**Call flow**: `MessageFormatAdvisor.before()` → `LifecycleToolCallAdvisor.doInitializeLoop()` → ToolCall Loop → `LifecycleToolCallAdvisor.doFinalizeLoop()` → `MessageFormatAdvisor.after()`
 
-`TaskProgressAdvisor` runs alongside `LifecycleToolCallAdvisor`, tracking exec_rounds to detect stalled tasks.
-
-### Core Advisors
-
-1. **LifecycleToolCallAdvisor** - Extends `ToolCallAdvisor`, handles:
-   - User message persistence (saves to MySQL via `MemoryRepository`)
-   - Assistant message persistence (after tool execution completes)
-   - Stream/Call mode support via `doGetNextInstructionsForToolCall` / `doGetNextInstructionsForToolCallStream`
-
-2. **MessageFormatAdvisor** - Implements `BaseAdvisor`:
-   - Loads system prompt via `SystemMessageLoader`
-   - Injects skill descriptions via `SkillLoader`
-   - Loads history messages via `MemoryRepository`
-   - Uses `ChatClientMessageAggregator` for stream mode
-
-3. **ContextCompressionAdvisor** - Compresses long conversation history:
-   - Keeps head + tail messages
-   - Summarizes middle messages via LLM
-   - Stores summaries in vector store
-
-### Database Schema
-
-- **MySQL** (`spring_ai_chat_memory`) - Chat history storage:
-  ```sql
-  CREATE TABLE spring_ai_chat_memory (
-      id bigint PRIMARY KEY AUTO_INCREMENT,
-      conversation_id varchar(36),
-      content longtext,
-      type varchar(10),  -- USER, ASSISTANT, SYSTEM, TOOL
-      timestamp timestamp
-  );
-  ```
-
-- **PostgreSQL** with `pgvector` - Vector similarity search for skills and RAG
-
-### Tool System (`tool/`)
-
-| Directory | Tools |
-|-----------|-------|
-| `file/` | ReadToolConfig, WriteToolConfig, EditToolConfig, GrepToolConfig, GlobToolConfig |
-| `web/` | WebSearchToolConfig, WebFetchToolConfig |
-| `rag/` | RagToolConfig |
-| `bash/` | BashToolConfig with security architecture (DangerousPatternValidator, SuicideCommandDetector, CommandApprover, ProcessTreeKiller) |
-| root | SkillToolConfig, AskUserQuestionTool, TaskToolConfig, AgentTool (marker interface), ToolsManager |
-
-**`AgentTool`** - Marker interface for tools; `ToolsManager` auto-discovers all `AgentTool` beans via `ToolCallbacks.from()` and registers them with `StaticToolCallbackResolver`.
-
-**`AskUserQuestionTool`** - Enables Agent to pause execution and ask user clarifying questions during tool call loops. Uses `AskUserQuestionService` + `CompletableFuture` for async response waiting. Throws `AskUserQuestionYieldException` to yield control back to the advisor loop.
-
-#### Agent Subsystem (`tool/agent/`)
-
-| Class | Responsibility |
-|-------|---------------|
-| `AgentToolConfig` | Tool entry point: `launchAgent` + `agentOutput` |
-| `SubAgentChatClientFactory` | Creates isolated ChatClient per agent type, with tool filtering and One-Shot support |
-| `AgentSessionManager` | In-memory session history for resume |
-| `AgentTaskRegistry` | Async task tracking with ownership checks |
-| `WorktreeManager` | Git worktree isolation for agent tasks |
-| `AgentType` | Enum: EXPLORE (One-Shot), PLAN (One-Shot), VERIFICATION (One-Shot), GENERAL, CODE_REVIEWER |
-
-Key features:
-- **Tool filtering**: Each `AgentType` has an `allowedTools` set; `SubAgentChatClientFactory` filters `ToolsManager.getToolCallbacks()` accordingly
-- **One-Shot mode**: EXPLORE, PLAN, VERIFICATION agents execute in a single LLM call (no iteration loop)
-- **Verification Agent**: Specialized in breaking things rather than confirming they work
-
-#### Bash Security Architecture
-
-The `bash/` package implements multi-layer command safety:
-
-- `DangerousPatternValidator` - Regex-based pattern matching for dangerous commands
-- `SuicideCommandDetector` - Detects commands that could destroy the system (rm -rf, fork bombs, etc.)
-- `CommandApprover` - Central approval gate for bash execution
-- `ProcessTreeKiller` - Cleans up process trees on timeout/termination
-- `PathApprovalService` - Manages approved execution paths
-
-### RAG Service (`service/rag/`)
-
-- `AdvancedRagEtlService` - ETL pipeline for document ingestion
-- `RecursiveTextSplitter` - Text chunking with token limits
-- `MarkdownHeaderSplitter` - Markdown-aware splitting
-- `TokenCounter` - JTokkit-based token counting
-
-### Skill System (`loader/`)
-
-- `SkillLoader` - Scans `src/main/resources/skills/` for SKILL.md files
-- `SystemMessageLoader` - Loads system prompt templates
-- Skills stored in `src/main/resources/skills/<skill-name>/SKILL.md`
-
-### Memory Repository (`repository/chat/MemoryRepository.java`)
-
-Handles chat history persistence:
-- `saveUserMessage()` - Saves user message, returns auto-increment ID
-- `saveAssistantMessage()` - Saves assistant message with parentId
-- `findMessagesByConversationId()` - Returns `List<Message>` for prompt building
-
-### Key Dependencies
-
-- Spring Boot 3.5.10 + Spring AI 1.1.3 (BOM managed)
-- Java 21
-- pgvector (vector embeddings)
-- Apache Tika + POI (document parsing)
-- JTokkit (token counting)
-
-## Frontend
-
-The `frontend/` directory contains a React/Vite web UI for interacting with the agent. It's a separate Node.js project.
-
-## Configuration
-
-- Main config: `application.yml`
-- Dev overrides: `application-dev.yml` (active by default)
-- AI providers configured via Spring AI properties
-
-## Skill Development
-
-Skills are stored in `src/main/resources/skills/<skill-name>/SKILL.md`. Each skill has YAML front matter with `name` and `description` fields.
-
-## Context Flow (Stream Mode)
-
+**Stream mode flow**:
 ```
 Request → MessageFormatAdvisor.before() → LifecycleToolCallAdvisor.doInitializeLoopStream()
        → ToolCall Loop (doGetNextInstructionsForToolCallStream)
@@ -169,12 +103,221 @@ Request → MessageFormatAdvisor.before() → LifecycleToolCallAdvisor.doInitial
        → LifecycleToolCallAdvisor.doFinalizeLoopStream() → Response
 ```
 
+### Tool System (`tool/`)
+
+| Package | Tools |
+|---------|-------|
+| `file/` | `ReadToolConfig`, `WriteToolConfig`, `EditToolConfig`, `GrepToolConfig`, `GlobToolConfig` |
+| `web/` | `WebSearchToolConfig`, `WebFetchToolConfig` |
+| `rag/` | `RagToolConfig` (semantic search over vector store) |
+| `bash/` | `BashToolConfig` (with security pipeline) |
+| root | `SkillToolConfig`, `AskUserQuestionTool`, `TaskToolConfig`, `AgentTool` (marker interface), `ToolsManager` |
+
+- `AgentTool` — marker interface; `ToolsManager` auto-discovers all `AgentTool` beans via `ToolCallbacks.from()`
+- `AskUserQuestionTool` — pauses execution, creates `CompletableFuture`, yields via `AskUserQuestionYieldException`. Frontend polls then submits answer to complete the future.
+
+### Agent Subsystem (`tool/agent/`)
+
+| Class | Purpose |
+|-------|---------|
+| `AgentToolConfig` | Entry point: `launchAgent` + `agentOutput` tools |
+| `SubAgentChatClientFactory` | Creates isolated ChatClient per agent type, tool filtering, One-Shot mode |
+| `AgentSessionManager` | In-memory session history for agent resume |
+| `AgentTaskRegistry` | Async task tracking with ownership checks |
+| `WorktreeManager` | Git worktree isolation for agent tasks |
+| `AgentType` | Enum: `EXPLORE` (One-Shot), `PLAN` (One-Shot), `VERIFICATION` (One-Shot), `GENERAL`, `CODE_REVIEWER` |
+
+**Tool filtering**: Each `AgentType` has `allowedTools` set; factory filters accordingly.
+
+### Bash Security Architecture (`tool/bash/`)
+
+| Component | Responsibility |
+|-----------|---------------|
+| `DangerousPatternValidator` | Regex-based pattern matching for dangerous commands |
+| `SuicideCommandDetector` | Detects system-destroying commands (rm -rf, fork bombs) |
+| `CommandApprover` | Central approval gate with SSE push to frontend |
+| `ProcessTreeKiller` | Cleanup on timeout/termination |
+| `PathApprovalService` | Approved execution paths management |
+
+### RAG System (`service/rag/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `AdvancedRagEtlService` | ETL pipeline: extract text → split → embed → store |
+| `RecursiveTextSplitter` | Token-aware recursive text chunking |
+| `MarkdownHeaderSplitter` | Markdown structure-aware splitting |
+| `TokenCounter` | JTokkit-based token counting |
+| `ParentChildSplitter` | Parent-child chunk relationship (parent=800 tokens, child=200 tokens) |
+
+**ETL flow**: Upload file → Tika text extraction → Parent-child splitting → Embed (ZhipuAI/BAAI/bge-m3) → Store in PostgreSQL pgvector
+
+### Skill System (`loader/`)
+
+- `SkillLoader` — scans configured directories for `SKILL.md` files
+- `SystemMessageLoader` — loads system prompt from `agent_system_prompt.md`
+- Skill discovery sources: `bundled` (classpath), `managed` (~/.claude/skills/), `user` (~/.omni/skills/)
+- Skills use YAML front matter (`name`, `description`, `tool`)
+- Each skill defines its own behavior rules
+
+### SSE Streaming Protocol
+
+**Wire format** (backend → frontend):
+```
+data:{"id":"...","choices":[{"delta":{"content":"...","reasoning_content":"...","tool_calls":[...]},"finish_reason":"tool_calls"}]}
+data:[DONE]
+```
+
+- Backend: `SseChunkEncoder` returns raw JSON, Spring Boot's `ServerSentEventHttpMessageWriter` adds `data:` prefix
+- `finish_reason: "tool_calls"` signals round-end (tool loop iteration complete)
+- Frontend `streamChat()`: reads raw `ReadableStream`, parses `data:` lines, yields `StreamEvent` objects
+- Events: `text`, `thought`, `tool-call`, `round-end`
+- Approval events use separate SSE channel: `/approval-events` (EventSource)
+
+### Security & Authentication
+
+- **Auth**: JWT-based, stored in cookie (HttpOnly), verified by `JwtAuthFilter`
+- `SecurityConfig`: permits `/api/auth/`, `/chat/stream`, `/approval-events`, `/api/knowledge-base/static`
+- **Password**: BCrypt
+- `UserDetailsServiceImpl`: loads from MySQL `users` table
+- CORS: allows `localhost:5173` (Vite dev), `localhost:9090`
+
+---
+
+## Frontend Architecture (`frontend/src/`)
+
+### Directory Structure
+
+```
+src/
+├── App.tsx                  # Main chat page: SSE streaming, state, polling
+├── main.tsx                 # React entry + BrowserRouter
+├── index.css                # Tailwind v4 + custom styles + animations
+├── api/
+│   ├── auth.ts              # Login/register/logout API
+│   ├── chat.ts              # SSE streamChat() async generator + polling APIs
+│   ├── knowledgeBase.ts     # KB CRUD + stats + search
+│   ├── pet.ts               # Pet CRUD API
+│   └── rag.ts               # RAG ETL upload API
+├── components/
+│   ├── AuthRoute.tsx        # Redirect if authenticated
+│   ├── PrivateRoute.tsx     # Redirect if not authenticated
+│   ├── ChatInput.tsx        # Message input: textarea + send + workspace + bypass
+│   ├── ChatMessage.tsx      # Block-rendered message: thought, tool-call, text
+│   ├── CommandApprovalInline.tsx  # Inline command approval card
+│   ├── DangerousCommandModal.tsx  # Modal command approval (unused)
+│   ├── HtmlArtifact.tsx     # HTML preview: code tab + iframe preview tab
+│   ├── KnowledgeBasePanel.tsx     # Full KB management UI
+│   ├── MarkdownRenderer.tsx # react-markdown + Prism syntax highlighting
+│   ├── QuestionInline.tsx   # Multi-step question form with navigation
+│   ├── RagUploadTool.tsx    # Standalone RAG upload tool
+│   ├── Sidebar.tsx          # Conversation list (Today/Yesterday/Older)
+│   ├── ToolsSidebar.tsx     # Floating KB button + fullscreen overlay
+│   └── pet/PetManagement.tsx # Pet CRUD grid + modal form
+├── context/AuthContext.tsx  # Global auth state (User, login, logout)
+├── pages/
+│   ├── LoginPage.tsx        # Login form
+│   └── RegisterPage.tsx     # Registration form
+├── types/index.ts           # Message, Conversation, Question, ChatStep, etc.
+└── utils/
+    ├── messageParser.ts     # <think> tag parsing, block detection
+    └── parseBlocks.ts       # Backup block parser (unused)
+```
+
+### Streaming State Machine (App.tsx)
+
+1. `handleSend(text)` → creates conversation, starts SSE stream + approval SSE + question polling
+2. Event loop over `streamChat()` yields `StreamEvent`:
+   - `thought` → append to `thoughtBufferById[roundIndex]`, update streaming block
+   - `tool-call` → set `toolName`/`toolInput` on latest thought block
+   - `text` → append to `textBufferById[roundIndex]`, update streaming block
+   - `round-end` → increment `roundIndex`
+   - `dangerous-command` → stop stream, show approval UI
+3. Stream ends → construct `Message` with `blocks[]` array → push to history
+
+### Question Polling Flow
+
+- `setInterval` polls `GET /api/questions/pending` every 2s
+- When `hasQuestion === true`, stop polling, render `<QuestionInline>`
+- User answers → `POST /api/questions/{id}/answer` → answer appended as user message → resume polling
+
+### Approval Flow
+
+- `EventSource` connects to `/approval-events`, listens for `dangerous-command`
+- `CommandApprovalInline` renders with Approve/Reject buttons
+- `submitApproval(ticketId, command, approved)` → backend resumes or cancels
+
+### Key Dependencies
+
+- React 18 + react-router-dom 6 + lucide-react (icons)
+- react-markdown + react-syntax-highlighter (Prism) + remark-gfm
+- Tailwind CSS v4 + `@tailwindcss/typography`
+
+### Routing
+
+```
+/          → PrivateRoute → ChatPage (main chat)
+/login     → AuthRoute    → LoginPage
+/register  → AuthRoute    → RegisterPage
+*          → Navigate to "/"
+```
+
+---
+
+## Database
+
+### MySQL (`rem-agent`)
+
+| Table | Purpose |
+|-------|---------|
+| `spring_ai_chat_memory` | Chat history: id, conversation_id, content, type (USER/ASSISTANT/SYSTEM/TOOL), timestamp |
+| `kb_file` | Knowledge base file records: id, kb_id, filename, status, total_chunks, timestamps |
+| `users` | Authentication: id, username, password (BCrypt) |
+| `chat_memory` | Linked-list message storage with parent_id tree |
+| `ai_tasks` | Task progress tracking |
+
+### PostgreSQL (`springai`) with pgvector
+
+| Table | Purpose |
+|-------|---------|
+| `vector_store` | Embeddings (1024d) + metadata, HNSW index, cosine distance |
+| `rag_parent_chunks` | RAG parent chunks (800 tokens) |
+| `spring_ai_chat_memory` | Chat history mirror (for vector search) |
+| `ai_tasks` | Task tracking |
+
+---
+
+## Configuration
+
+- **Main**: `application.yml` (default provider, memory threshold)
+- **Dev**: `application-dev.yml` (DB, AI vendors, RAG, threading, CORS)
+- **Test**: `application-test.yml`
+- **Frontend proxy**: `vite.config.ts` proxies `/chat`, `/api`, `/approval` → `localhost:9090`
+- **Approved commands**: `approved-commands.properties`
+- **System prompt**: `agent_system_prompt.md`
+
+### AI Vendors
+
+| Vendor | Model | Key Config |
+|--------|-------|------------|
+| DeepSeek | `deepseek-v4-flash` via OpenAI adapter | `spring.ai.openai.*` |
+| MiniMax | `MiniMax-M2.7` | `spring.ai.minimax.*` |
+| Anthropic | `MiniMax-M2.7` (proxied via MiniMax) | `spring.ai.anthropic.*` base-url to MiniMax proxy |
+| ZhipuAI | `embedding-3` (for embeddings) | `spring.ai.zhipuai.*` |
+| Embedding | `BAAI/bge-m3` (1024d) via SiliconFlow | `spring.ai.openai.embedding.*` |
+| Rerank | `BAAI/bge-reranker-v2-m3` via SiliconFlow | top-n=3 |
+
+---
+
 ## Development Guidelines
 
-See [docs/DEVELOPMENT_GUIDELINES.md](docs/DEVELOPMENT_GUIDELINES.md) for:
-- Comment conventions (Chinese, structured Javadoc)
-- Logging standards (`[ClassName]` prefix)
-- Code style (Early Return, semantic naming)
-- Testing standards (TDD, UUID isolation)
-- Git commit format
-- Common patterns (Repository, Advisor)
+**See also**: [docs/DEVELOPMENT_GUIDELINES.md](docs/DEVELOPMENT_GUIDELINES.md)
+
+- **Comments**: Chinese, structured Javadoc — explain WHY, not WHAT
+- **Logging**: `[ClassName]` prefix (e.g., `[RagFileRepository]`)
+- **Code style**: Early Return, semantic naming, no vague variables
+- **Testing**: TDD, UUID isolation in tests
+- **Git**: `<type>(<scope>): <subject>` in **Chinese**
+- **Frontend**: Tailwind v4, dark mode via `.dark` class, mobile-responsive, shadcn-inspired minimalism
+- **Adding a vendor**: Create new `ChatModelStrategy` implementation + `@Component`, no routing changes needed
+- **Adding a tool**: Implement `AgentTool` interface, `ToolsManager` auto-discovers via `ToolCallbacks.from()`
+- **Adding a skill**: Create `SKILL.md` in the scanned skills directory with YAML front matter

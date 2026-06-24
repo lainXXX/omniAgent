@@ -7,6 +7,7 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.memory.repository.jdbc.JdbcChatMemoryRepository;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.deepseek.DeepSeekChatModel;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.minimax.MiniMaxChatModel;
 import org.springframework.ai.openai.OpenAiChatModel;
@@ -49,6 +50,11 @@ public class AiConfig {
         return anthropicChatModel;
     }
 
+    @Bean("deepseekChatModel")
+    public ChatModel deepseekChatModel(DeepSeekChatModel deepSeekChatModel) {
+        return deepSeekChatModel;
+    }
+
     @Bean("openAiEmbeddingModel")
     public OpenAiEmbeddingModel openAiEmbeddingModel() {
         OpenAiApi openAiApi = OpenAiApi.builder()
@@ -80,6 +86,48 @@ public class AiConfig {
                         // 3. 匹配技能
 //                        skillActivationAdvisor,
                         // 4. 重排消息格式并修正角色顺序
+                        messageFormatAdvisor,
+                        lifecycleToolCallAdvisor,
+                        taskProgressAdvisor,
+                        retryAdvisor
+                )
+                .build();
+    }
+
+    /**
+     * DeepSeek ChatClient
+     */
+    @Bean("deepseekChatClient")
+    public ChatClient deepseekChatClient(
+            @Qualifier("deepseekChatModel") ChatModel deepseekChatModel,
+            MessageFormatAdvisor messageFormatAdvisor,
+            LifecycleToolCallAdvisor lifecycleToolCallAdvisor,
+            TaskProgressAdvisor taskProgressAdvisor,
+            RetryAdvisor retryAdvisor) {
+        return ChatClient.builder(deepseekChatModel)
+                .defaultToolContext(new HashMap<>(Map.of("debug", true)))
+                .defaultAdvisors(
+                        messageFormatAdvisor,
+                        lifecycleToolCallAdvisor,
+                        taskProgressAdvisor,
+                        retryAdvisor
+                )
+                .build();
+    }
+
+    /**
+     * MiniMax ChatClient
+     */
+    @Bean("minimaxChatClient")
+    public ChatClient minimaxChatClient(
+            @Qualifier("minimaxChatModel") ChatModel minimaxChatModel,
+            MessageFormatAdvisor messageFormatAdvisor,
+            LifecycleToolCallAdvisor lifecycleToolCallAdvisor,
+            TaskProgressAdvisor taskProgressAdvisor,
+            RetryAdvisor retryAdvisor) {
+        return ChatClient.builder(minimaxChatModel)
+                .defaultToolContext(new HashMap<>(Map.of("debug", true)))
+                .defaultAdvisors(
                         messageFormatAdvisor,
                         lifecycleToolCallAdvisor,
                         taskProgressAdvisor,

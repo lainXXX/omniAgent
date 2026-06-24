@@ -18,6 +18,7 @@ spring:
       allow_backslash_escaping_any_character: true
   main:
     allow-bean-definition-overriding: true
+    headless: false
   datasource:
     username: root
     password: root
@@ -48,8 +49,8 @@ spring:
         datasource:
           driver-class-name: org.postgresql.Driver
           username: postgres
-          password: Lain_007
-          url: jdbc:postgresql://117.72.210.49:15432/springai
+          password: postgres
+          url: jdbc:postgresql://localhost:5432/springai
           type: com.zaxxer.hikari.HikariDataSource
           hikari:
             maximum-pool-size: 5
@@ -73,13 +74,13 @@ spring:
       # 显式指定使用 embedding
       model: openai
     openai:
-      api-key: sk-cp-iCPIn304RzaQmSahTD9_GtaDCJVxSYyR1xKbWZrNlEdoVtoXG2cSv78AKM_Mu2E2h4l25oX-8cC11eJK3worf2qhpmykZEZwTAq4eaWZTnZqXawM1lb-9_U
+      api-key: sk-59d49691543b419bb88690328d43a03e
       # 注意：地址是 https://api.minimaxi.com/v1
-      base-url: https://api.minimaxi.com
+      base-url: https://api.deepseek.com
       chat:
         options:
           # 使用 M2.7 系列模型
-          model: MiniMax-M2.7
+          model: deepseek-v4-flash
           # 官方建议推理模型 temperature 设为 1.0
           temperature: 1.0
       embedding:
@@ -95,6 +96,14 @@ spring:
           model: MiniMax-M2.7
           # 官方建议推理模型 temperature 设为 1.0
           temperature: 1.0
+    # DeepSeek 模型配置
+    deepseek:
+      api-key: sk-59d49691543b419bb88690328d43a03e
+      chat:
+        options:
+          model: deepseek-v4-flash
+          temperature: 1.0
+
     # Anthropic Claude 模型配置
     anthropic:
       api-key: sk-cp-iCPIn304RzaQmSahTD9_GtaDCJVxSYyR1xKbWZrNlEdoVtoXG2cSv78AKM_Mu2E2h4l25oX-8cC11eJK3worf2qhpmykZEZwTAq4eaWZTnZqXawM1lb-9_U  # 设置环境变量 ANTHROPIC_API_KEY 或直接填写 API Key
@@ -252,14 +261,3 @@ skill:
     enabled: true
     log-detail: full
     persist: false
-
-  error:
-    user-detail: simple
-    log-detail: full
-
-app:
-  jwt:
-    secret: ${JWT_SECRET:your-256-bit-secret-key-here-change-in-production-must-be-at-least-32-chars}
-    expiration: 604800000  # 7 days in ms
-  cors:
-    allowed-origins: http://localhost:5173

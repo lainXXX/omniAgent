@@ -8,3 +8,8 @@ chat:
   memory:
     collapse:
       token-threshold: 80000
+
+# 大模型厂商配置
+omni:
+  provider:
+    default: deepseek

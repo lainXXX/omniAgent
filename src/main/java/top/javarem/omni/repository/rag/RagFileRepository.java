@@ -123,7 +123,7 @@ public class RagFileRepository {
         stats.put("totalFiles", totalFiles != null ? totalFiles : 0);
 
         // 已完成文件数
-        String completedFilesSql = "SELECT COUNT(*) FROM kb_file WHERE status = 'completed'";
+        String completedFilesSql = "SELECT COUNT(*) FROM kb_file WHERE status IN ('completed', 'done')";
         Integer completedFiles = jdbcTemplate.queryForObject(completedFilesSql, Integer.class);
         stats.put("completedFiles", completedFiles != null ? completedFiles : 0);
 
@@ -138,7 +138,7 @@ public class RagFileRepository {
         stats.put("failedFiles", failedFiles != null ? failedFiles : 0);
 
         // 总分块数
-        String totalChunksSql = "SELECT COALESCE(SUM(total_chunks), 0) FROM kb_file WHERE status = 'completed'";
+        String totalChunksSql = "SELECT COALESCE(SUM(total_chunks), 0) FROM kb_file WHERE status IN ('completed', 'done')";
         Integer totalChunks = jdbcTemplate.queryForObject(totalChunksSql, Integer.class);
         stats.put("totalChunks", totalChunks != null ? totalChunks : 0);
 

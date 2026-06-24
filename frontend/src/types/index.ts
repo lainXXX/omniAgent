@@ -4,6 +4,7 @@ export interface Message {
   content: string;
   timestamp: number;
   blocks?: ChatStep[];
+  processingTimeMs?: number;
 }
 
 export interface Conversation {
@@ -41,6 +42,9 @@ export interface ChatRequest {
   sessionId: string;
   workspace?: string;
   bypassApproval?: boolean;
+  vendor?: string;
+  model?: string;
+  stream?: boolean;
 }
 
 export interface ChatStep {
@@ -48,4 +52,5 @@ export interface ChatStep {
   type: 'thought' | 'tool-call' | 'text';
   content: string;
   toolName?: string;
+  toolInput?: string;
 }

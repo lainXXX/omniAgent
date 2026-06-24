@@ -71,12 +71,12 @@ export function Sidebar({ conversations, activeId, onSelect, onNew, onDelete, on
   };
 
   return (
-    <aside className="w-64 md:w-72 lg:w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col h-full max-w-[85vw] md:max-w-[320px]">
+    <aside className="w-64 md:w-72 lg:w-64 bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col h-full max-w-[85vw] md:max-w-[320px]">
       {/* Header */}
-      <div className="p-4 border-b border-zinc-800">
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
         <button
           onClick={onNew}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm rounded border border-zinc-700 transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-100 text-sm rounded border border-zinc-200 dark:border-zinc-700 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -151,8 +151,8 @@ function ConversationItem({ conv, isActive, onClick, onDelete, onRename }: Conve
     <div
       className={`group w-full flex flex-col px-3 py-2 rounded text-left text-sm transition-colors cursor-pointer ${
         isActive
-          ? 'bg-zinc-900 text-zinc-100 border border-zinc-800'
-          : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+          ? 'bg-zinc-200 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 border border-zinc-300 dark:border-zinc-800'
+          : 'text-zinc-500 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900 hover:text-zinc-700 dark:hover:text-zinc-300'
       }`}
     >
       <div className="flex items-center gap-2">

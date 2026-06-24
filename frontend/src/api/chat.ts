@@ -7,43 +7,8 @@ export interface PendingApproval {
 
 const API_BASE = '/chat';
 
-/**
- * 过滤工具调用 JSON 文本，避免内部实现细节暴露给用户
- * 只过滤独立的 tool_calls JSON，不过滤嵌入在思考内容中的
- */
-function filterToolCallText(text: string): string | null {
-  // 如果文本看起来是完整的思考块（以 < 开头），保留
-  if (text.trim().startsWith('<') && text.includes('}')) {
-    return text;
-  }
-  // 如果文本是纯 JSON 格式的工具调用，过滤掉
-  const trimmed = text.trim();
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-      (trimmed.startsWith('{"') && trimmed.includes('"tool_calls"'))) {
-    return null;
-  }
-  // 过滤嵌入在文本中的 tool_calls JSON (如: ...","tool_calls":[{"id":"...}])
-  text = text.replace(/,"tool_calls":\[[\s\S]*?\]/g, '');
-  text = text.replace(/"tool_calls":\[[\s\S]*?\]/g, '');
-  // 过滤末尾的 },--- 模式
-  text = text.replace(/\},?\s*---$/g, '');
-  return text;
-}
-
-/**
- * 过滤掉思考标签，因为思考内容已经通过 event:thought 单独发送
- */
-function filterThinkingTags(text: string): string {
-  return text
-    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-    .replace(/\[begin_thought\][\s\S]*?\[end_thought\]/gi, '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .trim();
-}
-
 export interface StreamEvent {
-  type: 'text' | 'thought' | 'dangerous-command' | 'ask-user-question' | 'tool-call';
+  type: 'text' | 'thought' | 'dangerous-command' | 'ask-user-question' | 'tool-call' | 'round-end';
   id?: string;
   data?: string;
   ticketId?: string;
@@ -56,17 +21,77 @@ export interface StreamEvent {
   thinkToolName?: string;
 }
 
+/**
+ * 解析 OpenAI-Compatible SSE data: 行，提取 delta 内容
+ */
+function parseDeltaPayload(line: string): StreamEvent[] {
+  const events: StreamEvent[] = [];
+
+  try {
+    const parsed = JSON.parse(line);
+    const choices = parsed.choices;
+    if (!choices || !choices.length) return events;
+
+    const choice = choices[0];
+    const delta = choice.delta || {};
+    const finishReason = choice.finish_reason;
+    const messageId = parsed.id || 'default';
+
+    // 1. 推理内容
+    if (delta.reasoning_content) {
+      events.push({ type: 'thought', id: 'reasoning', data: delta.reasoning_content });
+    }
+
+    // 2. 工具调用
+    if (delta.tool_calls && delta.tool_calls.length > 0) {
+      for (const tc of delta.tool_calls) {
+        events.push({
+          type: 'tool-call',
+          id: tc.id || messageId,
+          toolName: tc.function?.name,
+          toolInput: tc.function?.arguments,
+        });
+      }
+    }
+
+    // 3. 正文内容
+    if (delta.content) {
+      events.push({ type: 'text', id: messageId, data: delta.content });
+    }
+
+    // 4. finish_reason 标记 round 分隔
+    // tool_calls 表示本轮工具调用的结束，下一轮交互开始
+    if (finishReason === 'tool_calls') {
+      events.push({ type: 'round-end' });
+    }
+
+  } catch {
+    // 非 JSON 行忽略
+  }
+
+  return events;
+}
+
 export async function* streamChat(
   question: string,
   sessionId: string,
   workspace?: string,
-  bypassApproval?: boolean
+  bypassApproval?: boolean,
+  vendor?: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent, void, unknown> {
   const response = await fetch(`${API_BASE}/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ question, sessionId, workspace, bypassApproval } satisfies ChatRequest),
+    signal,
+    body: JSON.stringify({
+      question,
+      sessionId,
+      workspace,
+      bypassApproval,
+      vendor,
+    } satisfies ChatRequest),
   });
 
   if (!response.ok) {
@@ -86,74 +111,29 @@ export async function* streamChat(
 
       buffer += decoder.decode(value, { stream: true });
 
-      // 处理 buffer 直到没有完整的 SSE 事件
-      while (buffer.includes('\n\n')) {
-        const eventEnd = buffer.indexOf('\n\n');
-        const event = buffer.slice(0, eventEnd);
-        buffer = buffer.slice(eventEnd + 2);
-
-        // 解析 SSE 事件
-        let eventType = '';
-        const lines = event.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('event:')) {
-            eventType = line.slice(6).trim();
-          } else if (line.startsWith('data:')) {
-            const data = line.slice(5).trim();
-            if (!data || data === '[DONE]') continue;
-
-            if (eventType === 'dangerous-command') {
-              yield { type: 'dangerous-command', ...JSON.parse(data) } as StreamEvent;
-            } else if (eventType === 'ask-user-question') {
-              yield { type: 'ask-user-question', ...JSON.parse(data) } as StreamEvent;
-            } else if (eventType === 'thought') {
-              // 思考事件 - 直接传递原始内容，让渲染层解析
-              const chunk = JSON.parse(data);
-              yield { type: 'thought', id: chunk.id, data: chunk.content || '' } as StreamEvent;
-            } else if (eventType === 'tool') {
-              // 工具调用事件
-              const chunk = JSON.parse(data);
-              if (chunk.toolName) {
-                yield { type: 'tool-call', id: chunk.id, toolName: chunk.toolName } as StreamEvent;
-              }
-            } else if (eventType === 'message' || !eventType) {
-              // 普通消息事件 - 需要过滤掉 <think> 标签内容
-              try {
-                const chunk = JSON.parse(data);
-                if (chunk.content) {
-                  // 过滤掉 <think> 和 </think> 之间的内容
-                  const filtered = filterThinkingTags(chunk.content);
-                  if (filtered) {
-                    yield { type: 'text', id: chunk.id, data: filtered };
-                  }
-                }
-              } catch {
-                // 如果不是 JSON，当作纯文本处理（向后兼容）
-                let filtered = filterToolCallText(data);
-                if (filtered) {
-                  filtered = filterThinkingTags(filtered);
-                  if (filtered) {
-                    yield { type: 'text', data: filtered };
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // 处理剩余 buffer
-    if (buffer.trim()) {
+      // 处理 buffer 中完整的 data: 行
       const lines = buffer.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          const data = line.slice(5).trim();
-          if (!data || data === '[DONE]') continue;
-          const filtered = filterToolCallText(data);
-          if (filtered) {
-            yield { type: 'text', data: filtered };
+      // 保留最后可能不完整的行
+      buffer = lines.pop() || '';
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line.startsWith('data:')) continue;
+
+        // 提取 data: 之后的实际负载（兼容 data:{...}、data: {...}、data:data:{...} 等）
+        const payload = line.replace(/^(?:data:\s*)+/, '').trim();
+        if (!payload) continue;
+
+        // [DONE] 结束标记
+        if (payload === '[DONE]') {
+          return;
+        }
+
+        // JSON 负载
+        if (payload.startsWith('{')) {
+          const events = parseDeltaPayload(payload);
+          for (const event of events) {
+            yield event;
           }
         }
       }
@@ -230,7 +210,6 @@ export async function submitApproval(
 
 /**
  * 连接审批事件 SSE 通道（实时推送）
- * 返回 abort controller 用于断开连接
  */
 export function connectApprovalEvents(
   onDangerousCommand: (ticketId: string, command: string, message: string) => void
@@ -249,7 +228,6 @@ export function connectApprovalEvents(
 
   eventSource.onerror = (error) => {
     console.error('Approval events SSE error:', error);
-    // SSE 会自动重连
   };
 
   return { eventSource, controller };
